@@ -38,7 +38,7 @@ jobs:
         curl -Lo /usr/local/bin/talosctl \
         https://github.com/siderolabs/talos/releases/download/v1.0.2/talosctl-$(uname -s | tr "[:upper:]" "[:lower:]")-amd64
         chmod +x /usr/local/bin/talosctl
-        apt update && apt install -y ansible wireguard && rm -rf /var/lib/apt/lists/*
+        sudo apt update && sudo apt install -y ansible wireguard && sudo rm -rf /var/lib/apt/lists/*
 
     - name: Playbook run
       run: |
