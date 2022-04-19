@@ -1,0 +1,46 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  workflow_dispatch:
+
+jobs:
+  validate-terraform:
+    name: 'Validate terraform'
+    runs-on: 'ubuntu-latest'
+    steps:
+    - name: Clone the Repo
+      uses: actions/checkout@v2
+
+    - name: Run Terraform init
+      uses: docker://hashicorp/terraform:1.1.8
+      with:
+        entrypoint: terraform
+        args: -chdir=terraform init
+
+    - name: Run Terraform validate
+      uses: docker://hashicorp/terraform:1.1.8
+      with:
+        entrypoint: terraform
+        args: -chdir=terraform validate
+  validate-talos-playbook:
+    name: 'Validate talos playbook'
+    runs-on: 'ubuntu-latest'
+    steps:
+    - name: Clone the Repo
+      uses: actions/checkout@v2
+
+    - name: Get talos and ansible
+      run: |
+        curl -Lo /usr/local/bin/talosctl \
+        https://github.com/siderolabs/talos/releases/download/v1.0.2/talosctl-$(uname -s | tr "[:upper:]" "[:lower:]")-amd64
+        chmod +x /usr/local/bin/talosctl
+        apt update && apt install -y ansible wireguard && rm -rf /var/lib/apt/lists/*
+
+    - name: Playbook run
+      run: |
+        ansible-playbook playbook.yaml
+      working-directory: talos
