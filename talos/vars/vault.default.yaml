@@ -1,0 +1,6 @@
+---
+# Dummy variables used for the testing action.
+# Virtual IP password for keepalived.
+vip_pass: ""
+# Wireguard endpoint that controlplane clients will connect to.
+wg_endpoint: ""
