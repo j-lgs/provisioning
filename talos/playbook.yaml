@@ -3,8 +3,8 @@
   hosts: localhost
   vars_files:
   - vars/main.default.yaml
+  - vars/vault.default.yaml
   - vars/main.yaml
-  - vars/vault.yaml
   tasks:
   # The following three tasks deal generating a talos cluster configuration. Generated files are in the .gen directory.
   - name: Check if there is an existing cluster configuration
@@ -20,7 +20,7 @@
 
   - name: Set talosconfig endpoint and default node
     shell: talosctl --talosconfig=.gen/talosconfig config endpoint "{{ endpoints }}" && \
-           talosctl config node "{{ default_node }}"
+           talosctl --talosconfig=.gen/talosconfig config node "{{ default_node }}"
     when: not talosconfig.stat.exists
 
     # The validation command does not support advanced shell features, so a script must be created.
