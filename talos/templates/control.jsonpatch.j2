@@ -1,0 +1,200 @@
+
+[
+{% if item.0.api_proxy %}
+ {
+  "op": "add",
+  "path": "/cluster/apiServer/extraArgs",
+  "value": {
+   "secure-port": {{ local_apiproxy_port }}
+  }
+ },
+ {
+  "op": "add",
+  "path": "/cluster/controlPlane/localAPIServerPort",
+  "value": {{ local_apiproxy_port }}
+ },
+{% endif %}
+ {
+  "op": "add",
+  "path": "/machine/network/interfaces",
+  "value": [
+   {
+    "addresses": [
+     "{{ item.0.cidr }}"
+    ],
+    "interface": "eth0",
+    "routes": [
+     {
+      "gateway": "{{ gateway }}",
+      "network": "0.0.0.0/0"
+     }
+    ]
+   },
+   {
+    "addresses": [
+     "{{ item.0.wg_ip }}/24"
+    ],
+    "interface": "wg0",
+    "wireguard": {
+     "peers": [
+      {
+       "allowedIPs": [
+        "{{ wg_allowedips }}"
+       ],
+       "endpoint": "{{ wg_endpoint }}",
+       "persistentKeepaliveInterval": "25s",
+       "publicKey": "{{ item.1.stdout }}"
+      }
+     ],
+     "privateKey": "{{ lookup('file', '.gen/'+item.0.name+'.privatekey') }}"
+    }
+   }
+  ]
+ },
+ {
+  "op": "add",
+  "path": "/machine/network/nameservers",
+  "value": [
+   "{{ nameserver }}"
+  ]
+ },
+{% if item.0.api_proxy %}
+ {
+  "op": "add",
+  "path": "/machine/kubelet/extraMounts",
+  "value": [
+   {
+    "destination": "/var/static-confs",
+    "options": [
+     "rbind",
+     "rshared",
+     "rw"
+    ],
+    "source": "/var/static-confs",
+    "type": "bind"
+   }
+  ]
+  },
+ {
+  "op": "add",
+  "path": "/machine/certSANs/0",
+  "value": "{{ apiproxy_ip }}"
+ },
+ {
+  "op": "add",
+  "path": "/machine/files",
+  "value": [
+   {
+    "content": {{ lookup('template', 'haproxy.cfg.j2')|tojson }},
+    "op": "create",
+    "path": "/var/static-confs/haproxy/haproxy.cfg",
+    "permissions": 438
+   },
+   {
+    "content": {{ lookup('template', 'keepalived.conf.j2')|tojson }},
+    "op": "create",
+    "path": "/var/static-confs/keepalived/keepalived.conf",
+    "permissions": 292
+   },
+   {
+    "content": {{ lookup('template', 'check_apiserver.sh.j2')|tojson}},
+    "op": "create",
+    "path": "/var/static-confs/check_apiserver.sh",
+    "permissions": 365
+   }
+  ]
+ },
+ {
+  "op": "add",
+  "path": "/machine/pods",
+  "value": [
+   {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+     "name": "keepalived",
+     "namespace": "kube-system"
+    },
+    "spec": {
+     "containers": [
+      {
+       "image": "{{ keepalived_image }}",
+       "name": "keepalived",
+       "resources": {},
+       "securityContext": {
+        "capabilities": {
+         "add": [
+          "NET_ADMIN",
+          "NET_BROADCAST",
+          "NET_RAW"
+         ]
+        }
+       },
+       "volumeMounts": [
+        {
+         "mountPath": "/usr/local/etc/keepalived/keepalived.conf",
+         "name": "config"
+        },
+        {
+         "mountPath": "/etc/keepalived/check_apiserver.sh",
+         "name": "check"
+        }
+       ]
+      }
+     ],
+     "hostNetwork": true,
+     "volumes": [
+      {
+       "hostPath": {
+        "path": "/var/static-confs/keepalived/keepalived.conf"
+       },
+       "name": "config"
+      },
+      {
+       "hostPath": {
+        "path": "/var/static-confs/check_apiserver.sh"
+       },
+       "name": "check"
+      }
+     ]
+    },
+    "status": {}
+   },
+   {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+     "name": "haproxy",
+     "namespace": "kube-system"
+    },
+    "spec": {
+     "containers": [
+      {
+       "image": "{{ haproxy_image }}",
+       "name": "haproxy-controlplane",
+       "volumeMounts": [
+        {
+         "mountPath": "/usr/local/etc/haproxy/haproxy.cfg",
+         "name": "haproxyconf",
+         "readOnly": true
+        }
+       ]
+      }
+     ],
+     "hostNetwork": true,
+     "volumes": [
+      {
+       "hostPath": {
+        "path": "/var/static-confs/haproxy/haproxy.cfg",
+        "type": "FileOrCreate"
+       },
+       "name": "haproxyconf"
+      }
+     ]
+    },
+    "status": {}
+   }
+  ]
+ }
+{% endif %}
+]

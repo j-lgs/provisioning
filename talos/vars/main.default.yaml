@@ -1,0 +1,28 @@
+---
+controlplanes:
+- name: control-1
+  ip: "10.0.1.10"
+  cidr: "10.0.1.10/24"
+  api_proxy: false
+  wg: false
+- name: control-2
+  api_proxy: false
+  ip: "10.0.1.11"
+  cidr: "10.0.1.11/24"
+  wg: false
+- name: control-3
+  api_proxy: false
+  ip: "10.0.1.12"
+  cidr: "10.0.1.12/24"
+  wg: false
+
+workers:
+- name: cluster-worker-1
+  igpu: false
+  privileged: false
+  storage: false
+  cidr: "10.0.1.14/24"
+
+image: "ghcr.io/siderolabs/installer:v1.0.2"
+haproxy_image: "haproxy:2.4.14"
+keepalived_image: "osixia/keepalived:1.3.5-1"

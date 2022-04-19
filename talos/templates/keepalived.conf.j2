@@ -1,0 +1,29 @@
+global_defs {
+  router_id KubeVIP
+}
+
+vrrp_instance VI_1 {
+  state {{ item.0.state }}
+
+  interface eth0
+
+  virtual_router_id {{ vrid }}
+  priority {{ item.0.priority }}
+
+  mcast_src_ip {{ item.0.ip }}
+
+  authentication {
+    auth_type PASS
+    auth_pass {{ vip_pass }}
+  }
+
+  unicast_peer {
+{% for peer in item.0.peers %}
+    {{ peer }}
+{% endfor %}
+  }
+
+  virtual_ipaddress {
+    {{ apiproxy_ip }}/24
+  }
+}

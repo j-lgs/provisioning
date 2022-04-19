@@ -1,0 +1,78 @@
+---
+- name: Create talos manifests
+  hosts: localhost
+  vars_files:
+  - vars/main.default.yaml
+  - vars/main.yaml
+  - vars/vault.yaml
+  tasks:
+  # The following three tasks deal generating a talos cluster configuration. Generated files are in the .gen directory.
+  - name: Check if there is an existing cluster configuration
+    stat:
+      path: '.gen/talosconfig'
+    register: talosconfig
+
+  - name: Generate talos cluster configuration
+    shell: talosctl gen config "{{ cluster_name }}" "{{ endpoint }}" \
+      --with-docs=false --with-examples=false -o ".gen" \
+      --install-disk="{{ disk }}" --install-image="{{ image }}" --with-cluster-discovery="{{ discovery }}"
+    when: not talosconfig.stat.exists
+
+  - name: Set talosconfig endpoint and default node
+    shell: talosctl --talosconfig=.gen/talosconfig config endpoint "{{ endpoints }}" && \
+           talosctl config node "{{ default_node }}"
+    when: not talosconfig.stat.exists
+
+    # The validation command does not support advanced shell features, so a script must be created.
+  - name: Copy validation command
+    copy:
+      content: |
+        #!/bin/bash
+        tempfile=$(mktemp)
+        python -c \
+          'import yaml; import json; import sys; print(json.dumps(yaml.safe_load(sys.stdin)));' < "$1" > "${tempfile}"
+        jsonpatch "${tempfile}" "$2"
+        rm "${tempfile}"
+      dest: "./validate_template"
+      mode: 0755
+
+  - name: Check whether the controlplane's wireguard privatekeys have been generated
+    stat:
+      path: ".gen/{{ item.name }}.privatekey"
+    loop: "{{ controlplanes }}"
+    register: privkey_stats
+
+  # Controlplane private keys are saved to our ephemeral .gen directory.
+  - name: Generate controlplane privatekeys
+    shell: umask 077 && wg genkey > ".gen/{{ item.1.name }}.privatekey"
+    when: not item.0.stat.exists and item.1.wg
+    with_together:
+    - "{{ privkey_stats.results }}"
+    - "{{ controlplanes }}"
+
+  # Since public keys are derived from private keys, we can always run this command.
+  - name: Generate controlplane publickeys
+    shell: wg pubkey < ".gen/{{ item.name }}.privatekey"
+    register: pubkeys
+    loop: "{{ controlplanes }}"
+
+  - name: Template talos controlplane
+    template:
+      src: "control.jsonpatch.j2"
+      dest: "{{ item.0.name }}.jsonpatch"
+      validate: "./validate_template .gen/controlplane.yaml %s"
+    with_together:
+    - "{{ controlplanes }}"
+    - "{{ pubkeys.results }}"
+
+  - name: Template talos workers
+    template:
+      src: "worker.jsonpatch.j2"
+      dest: "{{ item.name }}.jsonpatch"
+      validate: "./validate_template .gen/worker.yaml %s"
+    loop: "{{ workers }}"
+
+  - name: Remove patch validator script
+    file:
+      path: ./validate_template
+      state: absent
