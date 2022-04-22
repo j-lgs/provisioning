@@ -11,6 +11,34 @@ provider "proxmox" {
   pm_api_url = var.pm_api_url
 }
 
+resource "proxmox_lxc" "registry_cache" {
+  target_node  = var.target_node
+  hostname     = var.registry_hostname
+  ostemplate   = var.registry_template
+  password     = var.registry_password
+  unprivileged = true
+
+  rootfs {
+    storage = var.container_boot_storage
+    size    = var.registry_size
+  }
+
+  network {
+    name   = "eth0"
+    bridge = "vmbr0"
+    ip     = var.registry_cidr
+
+    ip6    = "auto"
+  }
+
+  features {
+    nesting = true
+    keyctl  = true
+  }
+
+  cores = var.registry_cores
+}
+
 resource "proxmox_vm_qemu" "control-nodes" {
   for_each = var.control_nodes
   name = each.key

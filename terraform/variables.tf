@@ -49,9 +49,49 @@ variable "worker_vmid_base" {
 }
 
 variable "worker_nodes" {
-  description= "Map of worker nodes."
+  description = "Map of worker nodes."
   type = map
   default = {
     "cluster-worker-1"={idx=0, mac="replace me", cores=2, memory=2048, bootsize="64G", datasize="64G"}
   }
+}
+
+variable "registry_hostname" {
+  description = "Hostname for the pull through image cache container."
+  type = string
+  default = "registry"
+}
+
+variable "registry_template" {
+  description = "LXC template for the pull through image cache container."
+  type = string
+}
+
+variable "registry_password" {
+  description = "Password for the pull through image cache container."
+  type = string
+  sensitive = true
+}
+
+variable "container_boot_storage" {
+  description = "Storage location for containers."
+  type = string
+  default = "local-zfs"
+}
+
+variable "registry_size" {
+  description = "size of the registry's rootfs."
+  type = string
+  default = "64G"
+}
+
+variable "registry_cidr" {
+  description = "IP and CIDR for the registry container."
+  type = string
+}
+
+variable "registry_cores" {
+  description = "Amount of cores to give to the registry container."
+  type = number
+  default = 2
 }
