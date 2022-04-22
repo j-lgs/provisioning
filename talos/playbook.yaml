@@ -36,6 +36,30 @@
       dest: "./validate_template"
       mode: 0755
 
+  - name: Generate Haproxy configuration
+    template:
+      src: haproxy.cfg.j2
+      dest: ".gen/haproxy-{{ item.name }}.cfg"
+      validate: "haproxy -f %s -c"
+    when: item.api_proxy
+    loop: "{{ controlplanes }}"
+
+  - name: Generate keepalived configuration
+    template:
+      src: keepalived.conf.j2
+      dest: ".gen/keepalived-{{ item.name }}.conf"
+      validate: "keepalived -t -f %s"
+    when: item.api_proxy
+    loop: "{{ controlplanes }}"
+
+  - name: Generate keepalived check script
+    template:
+      src: check_apiserver.sh.j2
+      dest: ".gen/check_apiserver-{{ item.name }}.sh"
+      validate: "shellcheck %s"
+    when: item.api_proxy
+    loop: "{{ controlplanes }}"
+
   - name: Check whether the controlplane's wireguard privatekeys have been generated
     stat:
       path: ".gen/{{ item.name }}.privatekey"

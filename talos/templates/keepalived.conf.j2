@@ -3,14 +3,14 @@ global_defs {
 }
 
 vrrp_instance VI_1 {
-  state {{ item.0.state }}
+  state {{ item.state }}
 
   interface eth0
 
   virtual_router_id {{ vrid }}
-  priority {{ item.0.priority }}
+  priority {{ item.priority }}
 
-  mcast_src_ip {{ item.0.ip }}
+  mcast_src_ip {{ item.ip }}
 
   authentication {
     auth_type PASS
@@ -18,7 +18,7 @@ vrrp_instance VI_1 {
   }
 
   unicast_peer {
-{% for peer in item.0.peers %}
+{% for peer in item.peers %}
     {{ peer }}
 {% endfor %}
   }

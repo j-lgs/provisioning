@@ -85,19 +85,19 @@
   "path": "/machine/files",
   "value": [
    {
-    "content": {{ lookup('template', 'haproxy.cfg.j2')|tojson }},
+    "content": {{ lookup('file', '.gen/haproxy-'+item.0.name+'.cfg')|tojson }},
     "op": "create",
     "path": "/var/static-confs/haproxy/haproxy.cfg",
     "permissions": 438
    },
    {
-    "content": {{ lookup('template', 'keepalived.conf.j2')|tojson }},
+    "content": {{ lookup('file', '.gen/keepalived-'+item.0.name+'.conf')|tojson }},
     "op": "create",
     "path": "/var/static-confs/keepalived/keepalived.conf",
     "permissions": 292
    },
    {
-    "content": {{ lookup('template', 'check_apiserver.sh.j2')|tojson}},
+    "content": {{ lookup('file', '.gen/check_apiserver-'+item.0.name+'.sh')|tojson}},
     "op": "create",
     "path": "/var/static-confs/check_apiserver.sh",
     "permissions": 365

@@ -1,50 +1,50 @@
-        global
-          log         /dev/log local0
-          log         /dev/log local1 notice
-          daemon
-        defaults
-          mode                    tcp
-          log                     global
-          option                  tcplog
-          option                  tcp-check
-          option                  dontlognull
-          retries                 3
-          timeout client          20s
-          timeout server          20s
-          timeout check           10s
-          timeout queue           20s
-          option                  redispatch
-          timeout connect         5s
+global
+  log         /dev/log local0
+  log         /dev/log local1 notice
+  daemon
+defaults
+  mode                    tcp
+  log                     global
+  option                  tcplog
+  option                  tcp-check
+  option                  dontlognull
+  retries                 3
+  timeout client          20s
+  timeout server          20s
+  timeout check           10s
+  timeout queue           20s
+  option                  redispatch
+  timeout connect         5s
 
-        frontend http_stats
-          bind *:8080
-          mode http
-          stats uri /haproxy?stats
+frontend http_stats
+  bind *:8080
+  mode http
+  stats uri /haproxy?stats
 
-        listen k8s-apiserver
-          bind *:{{ apiproxy_port }}
-          option httpchk GET /healthz
-          http-check expect status 200
-          option ssl-hello-chk
-          balance leastconn
-          server chireiden-control-{{ item.0.ip }} {{ item.0.ip }}:{{ local_apiproxy_port }} check inter 5s  fall 2
-{% for peer in item.0.peers %}
-          server chireiden-control-{{ peer }} {{ peer }}:{{ local_apiproxy_port }} check inter 5s  fall 2
+listen k8s-apiserver
+  bind *:{{ apiproxy_port }}
+  option httpchk GET /healthz
+  http-check expect status 200
+  option ssl-hello-chk
+  balance leastconn
+  server chireiden-control-{{ item.ip }} {{ item.ip }}:{{ local_apiproxy_port }} check inter 5s  fall 2
+{% for peer in item.peers %}
+  server chireiden-control-{{ peer }} {{ peer }}:{{ local_apiproxy_port }} check inter 5s  fall 2
 {% endfor %}
 
-        listen wireguard-http-to-ingress
-          bind {{ item.0.wg_ip }}:{{ ingress_http_port }}
-          mode http
-          option httpchk
-          http-check send meth GET uri /healthz
-          http-check expect status 200
-          balance leastconn
-          server wireguard-1-http {{ ingress_ip }}:80 check inter 60s  fall 3  rise 1
+listen wireguard-http-to-ingress
+  bind {{ item.wg_ip }}:{{ ingress_http_port }}
+  mode http
+  option httpchk
+  http-check send meth GET uri /healthz
+  http-check expect status 200
+  balance leastconn
+  server wireguard-1-http {{ ingress_ip }}:80 check inter 60s  fall 3  rise 1
 
-        listen wireguard-https-to-ingress
-          bind {{ item.0.wg_ip }}:{{ ingress_ssl_port }}
-          option httpchk
-          http-check send meth GET uri /healthz
-          http-check expect status 200
-          balance leastconn
-          server wireguard-1-https {{ ingress_ip }}:443 check check-ssl inter 60s  fall 3  rise 1 verify none
+listen wireguard-https-to-ingress
+  bind {{ item.wg_ip }}:{{ ingress_ssl_port }}
+  option httpchk
+  http-check send meth GET uri /healthz
+  http-check expect status 200
+  balance leastconn
+  server wireguard-1-https {{ ingress_ip }}:443 check check-ssl inter 60s  fall 3  rise 1 verify none
