@@ -1,4 +1,5 @@
 ![Tests](https://github.com/j-lgs/provisioning/workflows/Tests/badge.svg)
+![Tests](https://github.com/j-lgs/provisioning/workflows/Container%20CI/badge.svg)
 
 ## About
 Scripts, configurations and playbooks for provisioning my homelab's local and remote servers.
