@@ -1,4 +1,4 @@
-name: container-ci
+name: Container CI
 on:
   push:
     branches: [ main ]
