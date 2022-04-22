@@ -1,0 +1,36 @@
+name: container-ci
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 'Build'
+    runs-on: 'ubuntu-latest'
+    env:
+      DO_PUSH: true
+      REGISTRY: ghcr.io/j-lgs
+    steps:
+    - name: Clone the Repo
+      uses: actions/checkout@v2
+
+    - name: Login to GHCR
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_TOKEN }}
+
+    - name: Build and Push to GitHub Container Repository
+      id: push-to-ghcr
+      uses: docker/build-push-action@v2
+      with:
+        context: images/playbook-verify
+        push: ${{ env.DO_PUSH }}
+        image: ${{ steps.build-image.outputs.image }}
+        tags: ghcr.io/j-lgs/playbook-verify:latest
+        registry: ${{ env.REGISTRY }}
