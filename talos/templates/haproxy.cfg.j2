@@ -35,16 +35,14 @@ listen k8s-apiserver
 listen wireguard-http-to-ingress
   bind {{ item.wg_ip }}:{{ ingress_http_port }}
   mode http
-  option httpchk
-  http-check send meth GET uri /healthz
-  http-check expect status 200
+  option httpchk GET /healthz
+  http-check disable-on-404
   balance leastconn
   server wireguard-1-http {{ ingress_ip }}:80 check inter 60s  fall 3  rise 1
 
 listen wireguard-https-to-ingress
   bind {{ item.wg_ip }}:{{ ingress_ssl_port }}
-  option httpchk
-  http-check send meth GET uri /healthz
-  http-check expect status 200
+  option httpchk GET /healthz
+  http-check disable-on-404
   balance leastconn
   server wireguard-1-https {{ ingress_ip }}:443 check check-ssl inter 60s  fall 3  rise 1 verify none
