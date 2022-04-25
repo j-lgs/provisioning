@@ -53,5 +53,5 @@ jobs:
     - name: Playbook run
       uses: 'docker://ghcr.io/j-lgs/playbook-verify:latest'
       with:
-        args: talos/playbook.yaml
+        args: talos/generate-talos-patches.yaml
 
