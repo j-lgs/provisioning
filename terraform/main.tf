@@ -37,21 +37,50 @@ resource "proxmox_lxc" "registry_cache" {
   }
 
   cores = var.registry_cores
-}
-
-resource "local_file" "registry_cache" {
-  content = <<-EOT
-    [registry]
-    localhost ansible_user=ansible ansible_password=ansible ansible_port=${docker_container.testing_registry.ports[0].external}
-  EOT
-  filename = "inventory"
 
   provisioner "local-exec" {
-    command = "ansible-playbook --inventory inventory ../provision-registry.yml"
+    command = <<EOT
+    cat <<EOF
+    [registry]
+    ${proxmox_lxc.registry_cache.network[0].ip} ansible_user=ansible ansible_password=ansible
+    EOF > .gen/inventory
+    ansible-playbook --inventory .gen/inventory ../provision-registry.yml
+    EOT
   }
 }
 
-resource "proxmox_vm_qemu" "control-nodes" {
+# Generate json patches that will be applied to the nodes after application
+resource "null_resource" "generate_patches" {
+  provisioner "local-exec" {
+    command = <<EOT
+    ansible-playbook generate-talos-patches.yaml --extra-vars @vars/vault.yaml --vault-password-file ~/vault_pass.txt
+    EOT
+  }
+}
+
+resource "null_resource" "bootstrap_cluster" {
+  provisioner "local-exec" {
+    command = <<EOT
+    talosctl bootstrap -n var.control_nodes[0].ip
+    EOT
+  }
+
+  depends_on = [
+    proxmox_vm_qemu.control_nodes,
+    proxmox_vm_qemu.worker_nodes,
+  ]
+}
+
+resource "proxmox_vm_qemu" "control_nodes" {
+  provisioner "local-exec" {
+    command = <<EOT
+    # Apply base config and stage
+    talosctl apply --insecure -n ${each.value.ip} -f .gen/controlplane.yaml
+    sleep 120
+    talosctl apply -n ${each.value.ip} -f @.gen/${each.key}.json
+    EOT
+  }
+
   for_each = var.control_nodes
   name = each.key
   desc = "Control plane node for the kubernetes cluster. Running on Talos. Node ${each.value.idx+1}"
@@ -82,9 +111,23 @@ resource "proxmox_vm_qemu" "control-nodes" {
     model   = "virtio"
     macaddr = each.value.mac
   }
+
+  depends_on = [
+    proxmox_lxc.registry_cache,
+    null_resource.generate_patches
+  ]
 }
 
-resource "proxmox_vm_qemu" "worker-nodes" {
+resource "proxmox_vm_qemu" "worker_nodes" {
+  provisioner "local-exec" {
+    command = <<EOT
+    # Apply base config and stage
+    talosctl apply --insecure -n ${each.value.ip} -f .gen/worker.yaml
+    sleep 120
+    talosctl apply -n ${each.value.ip} -f @.gen/${each.key}.json
+    EOT
+  }
+
   for_each = var.worker_nodes
   name = each.key
   desc = "Worker node for the kubernetes cluster. Running on Talos. Node ${each.value.idx+1}"
@@ -123,4 +166,9 @@ resource "proxmox_vm_qemu" "worker-nodes" {
     model   = "virtio"
     macaddr = each.value.mac
   }
+
+  depends_on = [
+    proxmox_lxc.registry_cache,
+    null_resource.generate_patches
+  ]
 }
