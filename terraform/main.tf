@@ -39,6 +39,18 @@ resource "proxmox_lxc" "registry_cache" {
   cores = var.registry_cores
 }
 
+resource "local_file" "registry_cache" {
+  content = <<-EOT
+    [registry]
+    localhost ansible_user=ansible ansible_password=ansible ansible_port=${docker_container.testing_registry.ports[0].external}
+  EOT
+  filename = "inventory"
+
+  provisioner "local-exec" {
+    command = "ansible-playbook --inventory inventory ../provision-registry.yml"
+  }
+}
+
 resource "proxmox_vm_qemu" "control-nodes" {
   for_each = var.control_nodes
   name = each.key

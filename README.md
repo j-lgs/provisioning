@@ -15,3 +15,6 @@ ansible-playbook playbook.yaml --extra-vars @vars/vault.yaml --vault-password-fi
 
 ### Terraform
 Terraform is used to provision the actual servers on a Proxmox host. Example variables are provided inside the repository.
+
+
+Requires installation of ansible, docker, talosctl for the creation of the testing cluster.

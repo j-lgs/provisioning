@@ -27,6 +27,19 @@ jobs:
         entrypoint: terraform
         args: -chdir=terraform validate
 
+    - name: Run Terraform init - testing
+      uses: docker://hashicorp/terraform:1.1.8
+      with:
+        entrypoint: terraform
+        args: -chdir=terraform/testing init
+
+    - name: Run Terraform validate - testing
+      uses: docker://hashicorp/terraform:1.1.8
+      with:
+        entrypoint: terraform
+        args: -chdir=terraform/testing validate
+
+
   validate-talos-playbook:
     name: 'talos validate'
     runs-on: 'ubuntu-latest'
