@@ -9,4 +9,3 @@ EXPOSE 22
 
 COPY root /
 CMD ["/usr/sbin/container-init"]
-#    "/usr/sbin/sshd","-D", "-E", "/var/log/sshd.log"]
