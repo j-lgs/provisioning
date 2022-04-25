@@ -40,6 +40,11 @@
  },
  {
   "op": "add",
+  "path": "/machine/network/hostname",
+  "value": "{{ item.name }}"
+ },
+ {
+  "op": "add",
   "path": "/machine/network/nameservers",
   "value": [
    "{{ nameserver }}"

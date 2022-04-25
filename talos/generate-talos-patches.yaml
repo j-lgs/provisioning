@@ -33,7 +33,7 @@
           'import yaml; import json; import sys; print(json.dumps(yaml.safe_load(sys.stdin)));' < "$1" > "${tempfile}"
         jsonpatch "${tempfile}" "$2"
         rm "${tempfile}"
-      dest: "./validate_template"
+      dest: ".gen/validate_template"
       mode: 0755
 
   - name: Generate Haproxy configuration
@@ -82,21 +82,21 @@
 
   - name: Template talos controlplane
     template:
-      src: "control.jsonpatch.j2"
-      dest: "{{ item.0.name }}.jsonpatch"
-      validate: "./validate_template .gen/controlplane.yaml %s"
+      src: "control.json.j2"
+      dest: "{{ item.0.name }}.json"
+      validate: ".gen/validate_template .gen/controlplane.yaml %s"
     with_together:
     - "{{ controlplanes }}"
     - "{{ pubkeys.results }}"
 
   - name: Template talos workers
     template:
-      src: "worker.jsonpatch.j2"
-      dest: "{{ item.name }}.jsonpatch"
-      validate: "./validate_template .gen/worker.yaml %s"
+      src: "worker.json.j2"
+      dest: "{{ item.name }}.json"
+      validate: ".gen/validate_template .gen/worker.yaml %s"
     loop: "{{ workers }}"
 
   - name: Remove patch validator script
     file:
-      path: ./validate_template
+      path: .gen/validate_template
       state: absent
