@@ -28,6 +28,12 @@ variable "target_node" {
   default = "node"
 }
 
+variable "target_node_ip" {
+  description = "Should match the ip that one of the control_nodes will have once running. Used for bootstrapping the cluster."
+  type = string
+  default = ""
+}
+
 variable "control_vmid_base" {
   description = "Base proxmox vmid used in the instantiation of controlplane VMs."
   type = number
@@ -45,7 +51,7 @@ variable "control_nodes" {
 variable "worker_vmid_base" {
   description = "Base proxmox vmid used in the instantiation of worker VMs."
   type = number
-  default = 100
+  default = 300
 }
 
 variable "worker_nodes" {
@@ -65,12 +71,6 @@ variable "registry_hostname" {
 variable "registry_template" {
   description = "LXC template for the pull through image cache container."
   type = string
-}
-
-variable "registry_password" {
-  description = "Password for the pull through image cache container."
-  type = string
-  sensitive = true
 }
 
 variable "container_boot_storage" {
@@ -94,4 +94,16 @@ variable "registry_cores" {
   description = "Amount of cores to give to the registry container."
   type = number
   default = 2
+}
+
+variable "gateway" {
+  description = "IP address of local network's gateway."
+  type = string
+}
+
+variable "is_sensitive" {
+  description = "Dummy variable to suppress command output of generate patches."
+  type = string
+  sensitive = true
+  default = ""
 }

@@ -11,12 +11,21 @@ provider "proxmox" {
   pm_api_url = var.pm_api_url
 }
 
+resource "random_password" "registry_password" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
 resource "proxmox_lxc" "registry_cache" {
   target_node  = var.target_node
   hostname     = var.registry_hostname
   ostemplate   = var.registry_template
-  password     = var.registry_password
+  password     = random_password.registry_password.result
   unprivileged = true
+  ostype       = "ubuntu"
+
+  vmid = 100
 
   rootfs {
     storage = var.container_boot_storage
@@ -26,8 +35,8 @@ resource "proxmox_lxc" "registry_cache" {
   network {
     name   = "eth0"
     bridge = "vmbr0"
+    gw     = var.gateway
     ip     = var.registry_cidr
-
     ip6    = "auto"
   }
 
@@ -38,22 +47,58 @@ resource "proxmox_lxc" "registry_cache" {
 
   cores = var.registry_cores
 
+  start  = true
+  onboot = true
+
+  ssh_public_keys = <<-EOT
+    ${file("~/.ssh/id_rsa.pub")}
+  EOT
+
   provisioner "local-exec" {
     command = <<EOT
-    cat <<EOF
-    [registry]
-    ${proxmox_lxc.registry_cache.network[0].ip} ansible_user=ansible ansible_password=ansible
-    EOF > .gen/inventory
-    ansible-playbook --inventory .gen/inventory ../provision-registry.yml
+    mkdir -p .gen
+    echo "[registry]
+    ${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.registry_password.result}
+    [patch_generator]
+    localhost registry_ip=${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]}" > .gen/inventory
+    until ssh root@${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
+    ansible-playbook --inventory .gen/inventory provision-registry.yml
     EOT
   }
 }
 
 # Generate json patches that will be applied to the nodes after application
 resource "null_resource" "generate_patches" {
+  // Changes to templates or playbook require reprovisioning
+  triggers = {
+    hashes = <<EOT
+${filesha256("../talos/generate-talos-patches.yaml")}
+${filesha256("../talos/vars/vault.yaml")}
+${filesha256("../talos/vars/main.yaml")}
+${filesha256("../talos/vars/main.default.yaml")}
+${filesha256("../talos/vars/vault.default.yaml")}
+${filesha256("../talos/templates/check_apiserver.sh.j2")}
+${filesha256("../talos/templates/control.json.j2")}
+${filesha256("../talos/templates/worker.json.j2")}
+${filesha256("../talos/templates/haproxy.cfg.j2")}
+${filesha256("../talos/templates/keepalived.conf.j2")}
+EOT
+  }
+
   provisioner "local-exec" {
     command = <<EOT
-    ansible-playbook generate-talos-patches.yaml --extra-vars @vars/vault.yaml --vault-password-file ~/vault_pass.txt
+    ansible-playbook ../talos/generate-talos-patches.yaml --extra-vars @../talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt
+    EOT
+    environment = {
+      DUMMY = var.is_sensitive
+    }
+  }
+
+  provisioner "local-exec" {
+    when = destroy
+    command = <<EOT
+    cd ../talos/.gen
+    rm *.sh *.privatekey *.yaml talosconfig *.conf *.cfg *.json || true
     EOT
   }
 }
@@ -61,7 +106,10 @@ resource "null_resource" "generate_patches" {
 resource "null_resource" "bootstrap_cluster" {
   provisioner "local-exec" {
     command = <<EOT
-    talosctl bootstrap -n var.control_nodes[0].ip
+    until talosctl disks -n ${var.target_node_ip} >/dev/null 2>&1; do echo "waiting for host ${var.target_node_ip}"; sleep 15; done
+    # Probably wait a bit or rerun the command
+    talosctl bootstrap -n ${var.target_node_ip}
+    talosctl kubeconfig -m -f
     EOT
   }
 
@@ -74,10 +122,16 @@ resource "null_resource" "bootstrap_cluster" {
 resource "proxmox_vm_qemu" "control_nodes" {
   provisioner "local-exec" {
     command = <<EOT
+    # Wait for host to be up
+    echo "waiting for host ${each.key} to boot"
+    nc -z -w 180 ${each.value.ip} 50000
     # Apply base config and stage
-    talosctl apply --insecure -n ${each.value.ip} -f .gen/controlplane.yaml
-    sleep 120
-    talosctl apply -n ${each.value.ip} -f @.gen/${each.key}.json
+    talosctl apply --insecure -n ${each.value.ip} -f ../talos/.gen/controlplane.yaml
+    echo "Base config applied"
+    # Wait for host to be up
+    until talosctl disks -n ${each.value.ip} >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
+    # Apply patches
+    talosctl patch machineconfig -n ${each.value.ip} --patch-file ../talos/.gen/${each.key}.json
     EOT
   }
 
@@ -121,12 +175,25 @@ resource "proxmox_vm_qemu" "control_nodes" {
 resource "proxmox_vm_qemu" "worker_nodes" {
   provisioner "local-exec" {
     command = <<EOT
+    # Wait for host to be up
+    echo "waiting for host ${each.key} to boot"
+    nc -z -w 180 ${each.value.ip} 50000
     # Apply base config and stage
-    talosctl apply --insecure -n ${each.value.ip} -f .gen/worker.yaml
-    sleep 120
-    talosctl apply -n ${each.value.ip} -f @.gen/${each.key}.json
+    talosctl apply --insecure -n ${each.value.ip} -f ../talos/.gen/worker.yaml
+    echo "Base config applied"
+    # Wait for host to be up
+    echo "waiting for host ${each.key}"
+    until talosctl disks -n ${each.value.ip} >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 45; done
+    # Apply patches
+    talosctl patch machineconfig -n ${each.value.ip} --patch-file ../talos/.gen/${each.key}.json
     EOT
   }
+
+  //provisioner "remote-exec" {
+  //  # Change machine type
+  //  # Add pci passthrough
+  //  # Reboot
+  //}
 
   for_each = var.worker_nodes
   name = each.key
