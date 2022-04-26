@@ -46,3 +46,8 @@ listen wireguard-https-to-ingress
   http-check disable-on-404
   balance leastconn
   server wireguard-1-https {{ ingress_ip }}:443 check check-ssl inter 60s  fall 3  rise 1 verify none
+
+
+
+
+

@@ -40,6 +40,19 @@
  },
  {
   "op": "add",
+  "path": "/machine/registries",
+  "value": {
+   "mirrors": {
+    "docker.io":  { "endpoints": [ "http://10.0.1.8:5000" ] },
+    "k8s.gcr.io": { "endpoints": [ "http://10.0.1.8:5001" ] },
+    "quay.io":    { "endpoints": [ "http://10.0.1.8:5003" ] },
+    "gcr.io":     { "endpoints": [ "http://10.0.1.8:5003" ] },
+    "ghcr.io":    { "endpoints": [ "http://10.0.1.8:5004" ] }
+   }
+  }
+ },
+ {
+  "op": "add",
   "path": "/machine/network/hostname",
   "value": "{{ item.name }}"
  },
