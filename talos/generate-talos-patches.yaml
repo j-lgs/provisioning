@@ -15,12 +15,14 @@
   - name: Generate talos cluster configuration
     shell: talosctl gen config "{{ cluster_name }}" "{{ endpoint }}" \
       --with-docs=false --with-examples=false -o ".gen" \
-      --install-disk="{{ disk }}" --install-image="{{ image }}" --with-cluster-discovery="{{ discovery }}"
+      --install-disk="{{ disk }}" --install-image="{{ image }}" --with-cluster-discovery="{{ discovery }}" \
+      --kubernetes-version "{{ kubernetes_version }}"
     when: not talosconfig.stat.exists
 
   - name: Set talosconfig endpoint and default node
-    shell: talosctl --talosconfig=.gen/talosconfig config endpoint "{{ endpoints }}" && \
-           talosctl --talosconfig=.gen/talosconfig config node "{{ default_node }}"
+    shell: talosctl --talosconfig=.gen/talosconfig config endpoint {{ endpoints }} && \
+           talosctl --talosconfig=.gen/talosconfig config node "{{ default_node }}" && \
+           talosctl config merge .gen/talosconfig
     when: not talosconfig.stat.exists
 
     # The validation command does not support advanced shell features, so a script must be created.
@@ -83,7 +85,7 @@
   - name: Template talos controlplane
     template:
       src: "control.json.j2"
-      dest: "{{ item.0.name }}.json"
+      dest: ".gen/{{ item.0.name }}.json"
       validate: ".gen/validate_template .gen/controlplane.yaml %s"
     with_together:
     - "{{ controlplanes }}"
@@ -92,7 +94,7 @@
   - name: Template talos workers
     template:
       src: "worker.json.j2"
-      dest: "{{ item.name }}.json"
+      dest: ".gen/{{ item.name }}.json"
       validate: ".gen/validate_template .gen/worker.yaml %s"
     loop: "{{ workers }}"
 

@@ -11,6 +11,9 @@ apiproxy_port: "6443"
 # Kubernetes apiserver port that's exposed on each node.
 local_apiproxy_port: "443"
 
+# Version of kubernetes to install in the cluster. Currently on 1.23.6 due to the --port flag being removed
+kubernetes_version: "1.23.6"
+
 # Wireguard allowedips for controlplane nodes. Must be inside the same range as the node wireguard IPs.
 wg_allowedips: "10.123.0.0/24"
 
@@ -22,9 +25,9 @@ cluster_name: gensokyo-cluster.local
 # Matches the bootdisks described by the terraform configuration
 disk: "/dev/vda"
 # Make sure to set up your DNS so the chosen endpoint address resolves to the same value as apiproxy_ip.
-endpoint: "https://kube.gensokyo-cluster.lan:6443"
+endpoint: "https://10.0.1.30:6443"
 # Used by the talos client to the talos API.
-endpoints: "10.0.1.31 10.0.1.32 10.0.1.33"
+endpoints: '"10.0.1.31" "10.0.1.32" "10.0.1.33"'
 # Default node for talos API operations to act upon.
 default_node: "10.0.1.31"
 # Enable the cluster discovery feature
