@@ -1,5 +1,13 @@
-
 [
+ {
+  "op": "add",
+  "path": "/cluster/proxy",
+  "value": {
+   "extraArgs": {
+    "ipvs-strict-arp": "true"
+   }
+  }
+ },
 {% if item.0.api_proxy %}
  {
   "op": "add",
