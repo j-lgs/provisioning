@@ -4,6 +4,14 @@ variable "pm_api_url" {
   default = "https://proxmox.lan:8006/api2/json"
 }
 
+variable "pcie_id" {
+  description = "Map of worker vm names to pcie IDs and MDEVs for gpu passthrough worker VMs."
+}
+
+variable "connections" {
+  description = "Map of proxmox hosts to ip addresses and passwords for root ssh authentication."
+}
+
 variable "talos_iso" {
   description = "The location of the talos iso in the target Proxmox \"datacenter\"."
   type = string
@@ -16,16 +24,20 @@ variable "boot_storage" {
   default = "local-zfs"
 }
 
+variable "mac_prefix" {
+  description = "MAC address prefix for VMs"
+}
+
 variable "data_storage" {
   description = "Proxmox storage location for worker VM data disks."
   type = string
   default = "local-zfs"
 }
 
-variable "target_node" {
-  description = "Proxmox node that the VMs will be deployed to."
+variable "ct_target_node" {
+  description = "Proxmox node that the Ubtuntu LXC container will be deployed to."
   type = string
-  default = "node"
+  default = "pve"
 }
 
 variable "target_node_ip" {
@@ -60,6 +72,43 @@ variable "worker_nodes" {
   default = {
     "cluster-worker-1"={idx=0, mac="replace me", cores=2, memory=2048, bootsize="64G", datasize="64G"}
   }
+}
+
+variable "nfs_hostname" {
+  description = "Hostname for the NFS server that shares ZFS datasets to containers."
+  type = string
+  default = "nfs"
+}
+
+variable "nfs_node" {
+  description = "Proxmox node the NFS server is hosted"
+  type = string
+  default = "pve"
+}
+
+variable "nfs_template" {
+  description = "Proxmox container template that the NFS server will run on."
+  type = string
+}
+
+variable "nfs_root_storage" {
+  description = "Proxmox storage location for the NFS container's rootfs"
+  type = string
+}
+
+variable "nfs_rootsize" {
+  description = "size of the NFS container's rootfs"
+  type = string
+  default = "4G"
+}
+
+variable "nfs_ip_cidr" {
+  description = "The IP address for the NFS Container"
+  type = string
+}
+
+variable "nfs_mountpoints" {
+  description = "a list of NFS Mountpoints"
 }
 
 variable "registry_hostname" {

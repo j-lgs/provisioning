@@ -39,7 +39,7 @@ ingress_ssl_port: "8443"
 ingress_http_port: "8080"
 
 controlplanes:
-- name: chireiden-control-1 # Doesn't need to match what was defined in the terraform configuration.
+- name: eientei-control-1 # Doesn't need to match what was defined in the terraform configuration.
   # TODO: Derive the node's IP from it's CIDR address.
   ip: "10.0.1.31"
   cidr: "10.0.1.31/17"
@@ -52,7 +52,7 @@ controlplanes:
   peers:
   - "10.0.1.33" # The node's peers within the Keepalived cluster.
   - "10.0.1.32"
-- name: chireiden-control-2
+- name: eientei-control-2
   api_proxy: true
   ip: "10.0.1.32"
   cidr: "10.0.1.32/17"
@@ -63,7 +63,7 @@ controlplanes:
   peers:
   - "10.0.1.33"
   - "10.0.1.31"
-- name: chireiden-control-3
+- name: eientei-control-3
   api_proxy: true
   ip: "10.0.1.33"
   cidr: "10.0.1.33/17"
@@ -76,7 +76,7 @@ controlplanes:
   - "10.0.1.32"
 
 workers:
-- name: chireiden-worker-1
+- name: eientei-worker-1
   # Does the worker node use an IGPU?
   igpu: true
   # Should privileged containers be enabled on this worker?

@@ -4,6 +4,10 @@ terraform {
       source = "Telmate/proxmox"
       version = "2.9.7"
     }
+    macaddress = {
+      source = "ivoronin/macaddress"
+      version = "0.3.0"
+    }
   }
 }
 
@@ -17,8 +21,14 @@ resource "random_password" "registry_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
+resource "random_password" "nfs_server" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
 resource "proxmox_lxc" "registry_cache" {
-  target_node  = var.target_node
+  target_node  = var.ct_target_node
   hostname     = var.registry_hostname
   ostemplate   = var.registry_template
   password     = random_password.registry_password.result
@@ -41,8 +51,10 @@ resource "proxmox_lxc" "registry_cache" {
   }
 
   features {
-    nesting = true
+    fuse    = false
     keyctl  = true
+    mknod   = false
+    nesting = true
   }
 
   cores = var.registry_cores
@@ -62,7 +74,74 @@ resource "proxmox_lxc" "registry_cache" {
     [patch_generator]
     localhost registry_ip=${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]}" > .gen/inventory
     until ssh root@${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
+    sleep 15
     ansible-playbook --inventory .gen/inventory provision-registry.yml
+    EOT
+  }
+}
+
+resource "proxmox_lxc" "nfs_server" {
+  target_node  = var.nfs_node
+  hostname     = var.nfs_hostname
+  ostemplate   = var.nfs_template
+  password     = random_password.nfs_server.result
+  unprivileged = false
+  ostype       = "ubuntu"
+
+  vmid = 101
+
+  rootfs {
+    storage = var.nfs_root_storage
+    size    = var.nfs_rootsize
+  }
+
+  network {
+    name   = "eth0"
+    bridge = "vmbr0"
+    gw     = var.gateway
+    ip     = var.nfs_ip_cidr
+    ip6    = "auto"
+  }
+
+  features {
+    fuse    = false
+    keyctl  = false
+    mknod   = false
+    mount   = "nfs"
+    nesting = true
+  }
+
+  dynamic "mountpoint" {
+    for_each = var.nfs_mountpoints
+    content {
+      key = tostring(mountpoint.key)
+      slot = mountpoint.key
+      storage = mountpoint.value["path"]
+      volume  = mountpoint.value["path"]
+      mp      = mountpoint.value["path"]
+      size    = mountpoint.value["size"]
+    }
+  }
+
+  cores = 2
+
+  start  = true
+  onboot = true
+
+  ssh_public_keys = <<-EOT
+    ${file("~/.ssh/id_rsa.pub")}
+  EOT
+
+  provisioner "local-exec" {
+    command = <<EOT
+    mkdir -p .gen
+    echo "[nfs]
+    ${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.nfs_server.result}
+    [patch_generator]
+    localhost registry_ip=${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]}" > .gen/nfs_inventory
+    until ssh root@${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
+    sleep 15
+    ansible-playbook --inventory .gen/nfs_inventory provision_nfs.yml
     EOT
   }
 }
@@ -98,7 +177,8 @@ EOT
     when = destroy
     command = <<EOT
     cd ../talos/.gen
-    rm *.sh *.privatekey *.yaml talosconfig *.conf *.cfg *.json || true
+    # Destroy all temporary files but don't destroy the talosconfig or wireguard keys
+    rm *.sh *.yaml *.conf *.cfg *.json || true
     EOT
   }
 }
@@ -109,29 +189,52 @@ resource "null_resource" "bootstrap_cluster" {
     until talosctl disks -n ${var.target_node_ip} >/dev/null 2>&1; do echo "waiting for host ${var.target_node_ip}"; sleep 15; done
     # Probably wait a bit or rerun the command
     talosctl bootstrap -n ${var.target_node_ip}
+    sleep 15
+    talosctl bootstrap -n ${var.target_node_ip}
     talosctl kubeconfig -m -f
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when = destroy
+    command = <<EOT
+    cd ../talos/.gen
+    # IF this resource is being destroyed the cluster probably is too. Delete privatekeys and talosconfigs.
+    rm *.privatekey talosconfig || true
     EOT
   }
 
   depends_on = [
     proxmox_vm_qemu.control_nodes,
-    proxmox_vm_qemu.worker_nodes,
   ]
+}
+
+resource "macaddress" "control_nodes" {
+  for_each = var.control_nodes
+  prefix = var.mac_prefix
 }
 
 resource "proxmox_vm_qemu" "control_nodes" {
   provisioner "local-exec" {
     command = <<EOT
+    echo "Getting IP"
+    # Get IP for mac address
+    until [ $(nmap -sP 10.0.0.0/24 >/dev/null && arp -an | grep "${macaddress.control_nodes[each.key].address}" \
+      | awk -F'[()]' '{print $2}') != "" ]; do
+      echo "waiting for host ${each.key} to be connected to the network"; sleep 5;
+    done
+    ip=$(arp -an | grep "${macaddress.control_nodes[each.key].address}" | awk -F'[()]' '{print $2}')
+    echo "Got IP $ip for host ${each.key}"
     # Wait for host to be up
     echo "waiting for host ${each.key} to boot"
-    nc -z -w 180 ${each.value.ip} 50000
+    nc -z -w 180 $ip 50000
     # Apply base config and stage
-    talosctl apply --insecure -n ${each.value.ip} -f ../talos/.gen/controlplane.yaml
+    talosctl apply --insecure -n "$ip" -f ../talos/.gen/controlplane.yaml
     echo "Base config applied"
     # Wait for host to be up
-    until talosctl disks -n ${each.value.ip} >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
+    until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
     # Apply patches
-    talosctl patch machineconfig -n ${each.value.ip} --patch-file ../talos/.gen/${each.key}.json
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file ../talos/.gen/${each.key}.json
     EOT
   }
 
@@ -141,8 +244,10 @@ resource "proxmox_vm_qemu" "control_nodes" {
 
   vmid = var.control_vmid_base+each.value.idx
 
-  target_node = var.target_node
-  iso         = var.talos_iso
+  target_node = each.value.node
+  iso         = join("", [each.value.isoloc, ":iso/", var.talos_iso])
+
+  bios = "ovmf"
 
   tablet = false
   agent  = 0
@@ -154,7 +259,7 @@ resource "proxmox_vm_qemu" "control_nodes" {
 
   disk {
     type = "virtio"
-    storage  = var.boot_storage
+    storage  = each.value.bootloc
     size     = each.value.bootsize
     backup   = 1
     iothread = 1
@@ -163,7 +268,7 @@ resource "proxmox_vm_qemu" "control_nodes" {
   network {
     bridge  = "vmbr0"
     model   = "virtio"
-    macaddr = each.value.mac
+    macaddr = macaddress.control_nodes[each.key].address
   }
 
   depends_on = [
@@ -172,28 +277,52 @@ resource "proxmox_vm_qemu" "control_nodes" {
   ]
 }
 
-resource "proxmox_vm_qemu" "worker_nodes" {
+resource "macaddress" "worker_nodes" {
+  for_each = var.worker_nodes
+  prefix = var.mac_prefix
+}
+
+resource "proxmox_vm_qemu" "igpu_worker_nodes" {
   provisioner "local-exec" {
     command = <<EOT
+    until [ $(nmap -sP 10.0.0.0/24 >/dev/null && arp -an | grep "${macaddress.worker_nodes[each.key].address}" \
+      | awk -F'[()]' '{print $2}') != "" ]; do
+      echo "waiting for host ${each.key} to be connected to the network"; sleep 5;
+    done
+    ip=$(arp -an | grep "${macaddress.worker_nodes[each.key].address}" | awk -F'[()]' '{print $2}')
     # Wait for host to be up
     echo "waiting for host ${each.key} to boot"
-    nc -z -w 180 ${each.value.ip} 50000
+    nc -z -w 180s $ip 50000
+    sleep 5
     # Apply base config and stage
-    talosctl apply --insecure -n ${each.value.ip} -f ../talos/.gen/worker.yaml
+    talosctl apply --insecure -n $ip -f ../talos/.gen/worker.yaml
     echo "Base config applied"
     # Wait for host to be up
     echo "waiting for host ${each.key}"
-    until talosctl disks -n ${each.value.ip} >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 45; done
+    until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
     # Apply patches
-    talosctl patch machineconfig -n ${each.value.ip} --patch-file ../talos/.gen/${each.key}.json
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file ../talos/.gen/${each.key}.json
     EOT
   }
 
-  //provisioner "remote-exec" {
-  //  # Change machine type
-  //  # Add pci passthrough
-  //  # Reboot
-  //}
+  connection {
+    type = "ssh"
+    user = "root"
+    password = var.connections[self.target_node].password
+    host = var.connections[self.target_node].ip
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo waiting for host ${each.key} for at most 180s",
+      "sleep 15",
+      "nc -z -w 180s ${each.value.ip} 50000",
+      "sleep 15",
+      "qm set ${self.vmid} -hostpci0 ${var.pcie_id[each.key].id},mdev=${var.pcie_id[each.key].mdev},pcie=1",
+      "qm set ${self.vmid} -machine q35",
+      "qm reboot ${self.vmid}"
+    ]
+  }
 
   for_each = var.worker_nodes
   name = each.key
@@ -201,11 +330,12 @@ resource "proxmox_vm_qemu" "worker_nodes" {
 
   vmid = var.worker_vmid_base+each.value.idx
 
-  target_node = var.target_node
-  iso         = var.talos_iso
+  target_node = each.value.node
+  iso         = join("", [each.value.isoloc, ":iso/", var.talos_iso])
 
   tablet = false
   agent  = 0
+  bios   = "ovmf"
 
   memory = each.value.memory
   cores  = each.value.cores
@@ -231,7 +361,7 @@ resource "proxmox_vm_qemu" "worker_nodes" {
   network {
     bridge  = "vmbr0"
     model   = "virtio"
-    macaddr = each.value.mac
+    macaddr = macaddress.worker_nodes[each.key].address
   }
 
   depends_on = [

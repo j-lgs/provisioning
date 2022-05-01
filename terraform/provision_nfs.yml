@@ -1,0 +1,32 @@
+---
+- name: provision
+  hosts: nfs
+  vars:
+    server_host: "10.0.1.9/16"
+  tasks:
+  - name: Ensure dependencies are present
+    apt:
+      pkg:
+      - nfs-kernel-server
+      - nfs-common
+      state: present
+      update_cache: yes
+  - name: ensure /etc/exports is present
+    file:
+      path: /etc/exports
+      state: file
+  - name: Enable the NFS server
+    lineinfile:
+      path: /etc/exports
+      state: present
+      create: yes
+      line: "{{ item }} {{ server_host }}(rw,async,insecure,no_subtree_check,all_squash,anonuid=501,anongid=100,fsid=1)"
+    loop:
+    - "/rust1/media/music"
+    - "/rust1/download/inbox"
+    notify: reload-nfs-server
+  handlers:
+  - name: reload-nfs-server
+    systemd:
+      name: nfs-kernel-server
+      state: restarted
