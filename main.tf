@@ -151,22 +151,22 @@ resource "null_resource" "generate_patches" {
   // Changes to templates or playbook require reprovisioning
   triggers = {
     hashes = <<EOT
-${filesha256("../talos/generate-talos-patches.yaml")}
-${filesha256("../talos/vars/vault.yaml")}
-${filesha256("../talos/vars/main.yaml")}
-${filesha256("../talos/vars/main.default.yaml")}
-${filesha256("../talos/vars/vault.default.yaml")}
-${filesha256("../talos/templates/check_apiserver.sh.j2")}
-${filesha256("../talos/templates/control.json.j2")}
-${filesha256("../talos/templates/worker.json.j2")}
-${filesha256("../talos/templates/haproxy.cfg.j2")}
-${filesha256("../talos/templates/keepalived.conf.j2")}
+${filesha256("talos/generate-talos-patches.yaml")}
+${filesha256("talos/vars/vault.yaml")}
+${filesha256("talos/vars/main.yaml")}
+${filesha256("talos/vars/main.default.yaml")}
+${filesha256("talos/vars/vault.default.yaml")}
+${filesha256("talos/templates/check_apiserver.sh.j2")}
+${filesha256("talos/templates/control.json.j2")}
+${filesha256("talos/templates/worker.json.j2")}
+${filesha256("talos/templates/haproxy.cfg.j2")}
+${filesha256("talos/templates/keepalived.conf.j2")}
 EOT
   }
 
   provisioner "local-exec" {
     command = <<EOT
-    ansible-playbook ../talos/generate-talos-patches.yaml --extra-vars @../talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt
+    ansible-playbook talos/generate-talos-patches.yaml --extra-vars @talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt
     EOT
     environment = {
       DUMMY = var.is_sensitive
@@ -176,7 +176,7 @@ EOT
   provisioner "local-exec" {
     when = destroy
     command = <<EOT
-    cd ../talos/.gen
+    cd talos/.gen
     # Destroy all temporary files but don't destroy the talosconfig or wireguard keys
     rm *.sh *.yaml *.conf *.cfg *.json || true
     EOT
@@ -198,7 +198,7 @@ resource "null_resource" "bootstrap_cluster" {
   provisioner "local-exec" {
     when = destroy
     command = <<EOT
-    cd ../talos/.gen
+    cd talos/.gen
     # IF this resource is being destroyed the cluster probably is too. Delete privatekeys and talosconfigs.
     rm *.privatekey talosconfig || true
     EOT
@@ -229,12 +229,12 @@ resource "proxmox_vm_qemu" "control_nodes" {
     echo "waiting for host ${each.key} to boot"
     nc -z -w 180 $ip 50000
     # Apply base config and stage
-    talosctl apply --insecure -n "$ip" -f ../talos/.gen/controlplane.yaml
+    talosctl apply --insecure -n "$ip" -f talos/.gen/controlplane.yaml
     echo "Base config applied"
     # Wait for host to be up
     until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
     # Apply patches
-    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file ../talos/.gen/${each.key}.json
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${each.key}.json
     EOT
   }
 
@@ -295,13 +295,13 @@ resource "proxmox_vm_qemu" "igpu_worker_nodes" {
     nc -z -w 180s $ip 50000
     sleep 5
     # Apply base config and stage
-    talosctl apply --insecure -n $ip -f ../talos/.gen/worker.yaml
+    talosctl apply --insecure -n $ip -f talos/.gen/worker.yaml
     echo "Base config applied"
     # Wait for host to be up
     echo "waiting for host ${each.key}"
     until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
     # Apply patches
-    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file ../talos/.gen/${each.key}.json
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${each.key}.json
     EOT
   }
 

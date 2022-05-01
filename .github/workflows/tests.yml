@@ -19,25 +19,25 @@ jobs:
       uses: docker://hashicorp/terraform:1.1.8
       with:
         entrypoint: terraform
-        args: -chdir=terraform init
+        args: init
 
     - name: Run Terraform validate
       uses: docker://hashicorp/terraform:1.1.8
       with:
         entrypoint: terraform
-        args: -chdir=terraform validate
+        args: validate
 
     - name: Run Terraform init - testing
       uses: docker://hashicorp/terraform:1.1.8
       with:
         entrypoint: terraform
-        args: -chdir=terraform/testing init
+        args: -chdir=testing init
 
     - name: Run Terraform validate - testing
       uses: docker://hashicorp/terraform:1.1.8
       with:
         entrypoint: terraform
-        args: -chdir=terraform/testing validate
+        args: -chdir=testing validate
 
 
   validate-talos-playbook:
@@ -53,5 +53,6 @@ jobs:
     - name: Playbook run
       uses: 'docker://ghcr.io/j-lgs/playbook-verify:latest'
       with:
-        args: talos/generate-talos-patches.yaml
+        entrypoint: 'ansible-playbook'
+        args: 'talos/generate-talos-patches.yaml'
 
