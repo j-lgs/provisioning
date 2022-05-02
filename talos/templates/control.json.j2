@@ -54,7 +54,7 @@
        "publicKey": "{{ item.1.stdout }}"
       }
      ],
-     "privateKey": "{{ lookup('file', '.gen/'+item.0.name+'.privatekey') }}"
+     "privateKey": "{{ lookup('file', '.gen/{{ project }}/'+item.0.name+'.privatekey') }}"
     }
    }
   ]
@@ -64,11 +64,11 @@
   "path": "/machine/registries",
   "value": {
    "mirrors": {
-    "docker.io":  { "endpoints": [ "http://10.0.1.8:5000" ] },
-    "k8s.gcr.io": { "endpoints": [ "http://10.0.1.8:5001" ] },
-    "quay.io":    { "endpoints": [ "http://10.0.1.8:5003" ] },
-    "gcr.io":     { "endpoints": [ "http://10.0.1.8:5003" ] },
-    "ghcr.io":    { "endpoints": [ "http://10.0.1.8:5004" ] }
+    "docker.io":  { "endpoints": [ "http://{{ registry_host }}:5000" ] },
+    "k8s.gcr.io": { "endpoints": [ "http://{{ registry_host }}:5001" ] },
+    "quay.io":    { "endpoints": [ "http://{{ registry_host }}:5003" ] },
+    "gcr.io":     { "endpoints": [ "http://{{ registry_host }}:5003" ] },
+    "ghcr.io":    { "endpoints": [ "http://{{ registry_host }}:5004" ] }
    }
   }
  },
@@ -112,19 +112,19 @@
   "path": "/machine/files",
   "value": [
    {
-    "content": {{ lookup('file', '.gen/haproxy-'+item.0.name+'.cfg')|to_json|replace('e"','e\\n"') }},
+    "content": {{ lookup('file', '.gen/{{ project }}/haproxy-'+item.0.name+'.cfg')|to_json|replace('e"','e\\n"') }},
     "op": "create",
     "path": "/var/static-confs/haproxy/haproxy.cfg",
     "permissions": 438
    },
    {
-    "content": {{ lookup('file', '.gen/keepalived-'+item.0.name+'.conf')|to_json}},
+    "content": {{ lookup('file', '.gen/{{ project }}/keepalived-'+item.0.name+'.conf')|to_json}},
     "op": "create",
     "path": "/var/static-confs/keepalived/keepalived.conf",
     "permissions": 292
    },
    {
-  "content": {{ lookup('file', '.gen/check_apiserver-'+item.0.name+'.sh')|to_json}},
+  "content": {{ lookup('file', '.gen/{{ project }}/check_apiserver-'+item.0.name+'.sh')|to_json}},
     "op": "create",
     "path": "/var/static-confs/check_apiserver.sh",
     "permissions": 365

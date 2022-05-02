@@ -4,25 +4,24 @@
   vars_files:
   - vars/main.default.yaml
   - vars/vault.default.yaml
-  - vars/main.yaml
   tasks:
   # The following three tasks deal generating a talos cluster configuration. Generated files are in the .gen directory.
   - name: Check if there is an existing cluster configuration
     stat:
-      path: '.gen/talosconfig'
+      path: '.gen/{{ project }}/talosconfig'
     register: talosconfig
 
   - name: Generate talos cluster configuration
     shell: talosctl gen config "{{ cluster_name }}" "{{ endpoint }}" \
-      --with-docs=false --with-examples=false -o ".gen" \
+      --with-docs=false --with-examples=false -o ".gen/{{ project }}" \
       --install-disk="{{ disk }}" --install-image="{{ image }}" --with-cluster-discovery="{{ discovery }}" \
       --kubernetes-version "{{ kubernetes_version }}"
     when: not talosconfig.stat.exists
 
   - name: Set talosconfig endpoint and default node
-    shell: talosctl --talosconfig=.gen/talosconfig config endpoint {{ endpoints }} && \
-           talosctl --talosconfig=.gen/talosconfig config node "{{ default_node }}" && \
-           talosctl config merge .gen/talosconfig
+    shell: talosctl --talosconfig=".gen/{{ project }}/talosconfig" config endpoint {{ endpoints }} && \
+           talosctl --talosconfig=".gen/{{ project }}/talosconfig" config node "{{ default_node }}" && \
+           talosctl config merge ".gen/{{ project }}/talosconfig"
     when: not talosconfig.stat.exists
 
     # The validation command does not support advanced shell features, so a script must be created.
@@ -35,13 +34,13 @@
           'import yaml; import json; import sys; print(json.dumps(yaml.safe_load(sys.stdin)));' < "$1" > "${tempfile}"
         jsonpatch "${tempfile}" "$2"
         rm "${tempfile}"
-      dest: ".gen/validate_template"
+      dest: ".gen/{{ project }}/validate_template"
       mode: 0755
 
   - name: Generate Haproxy configuration
     template:
       src: haproxy.cfg.j2
-      dest: ".gen/haproxy-{{ item.name }}.cfg"
+      dest: ".gen/{{ project }}/haproxy-{{ item.name }}.cfg"
       validate: "haproxy -f %s -c"
     when: item.api_proxy
     loop: "{{ controlplanes }}"
@@ -49,7 +48,7 @@
   - name: Generate keepalived configuration
     template:
       src: keepalived.conf.j2
-      dest: ".gen/keepalived-{{ item.name }}.conf"
+      dest: ".gen/{{ project }}/keepalived-{{ item.name }}.conf"
       validate: "keepalived -t -f %s"
     when: item.api_proxy
     loop: "{{ controlplanes }}"
@@ -57,20 +56,20 @@
   - name: Generate keepalived check script
     template:
       src: check_apiserver.sh.j2
-      dest: ".gen/check_apiserver-{{ item.name }}.sh"
+      dest: ".gen/{{ project }}/check_apiserver-{{ item.name }}.sh"
       validate: "shellcheck %s"
     when: item.api_proxy
     loop: "{{ controlplanes }}"
 
   - name: Check whether the controlplane's wireguard privatekeys have been generated
     stat:
-      path: ".gen/{{ item.name }}.privatekey"
+      path: ".gen/{{ project }}/{{ item.name }}.privatekey"
     loop: "{{ controlplanes }}"
     register: privkey_stats
 
-  # Controlplane private keys are saved to our ephemeral .gen directory.
+  # Controlplane private keys are saved to our ephemeral .gen/{{ project }} directory.
   - name: Generate controlplane privatekeys
-    shell: umask 077 && wg genkey > ".gen/{{ item.1.name }}.privatekey"
+    shell: umask 077 && wg genkey > ".gen/{{ project }}/{{ item.1.name }}.privatekey"
     when: not item.0.stat.exists and item.1.wg
     with_together:
     - "{{ privkey_stats.results }}"
@@ -78,15 +77,15 @@
 
   # Since public keys are derived from private keys, we can always run this command.
   - name: Generate controlplane publickeys
-    shell: wg pubkey < ".gen/{{ item.name }}.privatekey"
+    shell: wg pubkey < ".gen/{{ project }}/{{ item.name }}.privatekey"
     register: pubkeys
     loop: "{{ controlplanes }}"
 
   - name: Template talos controlplane
     template:
       src: "control.json.j2"
-      dest: ".gen/{{ item.0.name }}.json"
-      validate: ".gen/validate_template .gen/controlplane.yaml %s"
+      dest: ".gen/{{ project }}/{{ item.0.name }}.json"
+      validate: ".gen/{{ project }}/validate_template .gen/{{ project }}/controlplane.yaml %s"
     with_together:
     - "{{ controlplanes }}"
     - "{{ pubkeys.results }}"
@@ -94,11 +93,11 @@
   - name: Template talos workers
     template:
       src: "worker.json.j2"
-      dest: ".gen/{{ item.name }}.json"
-      validate: ".gen/validate_template .gen/worker.yaml %s"
+      dest: ".gen/{{ project }}/{{ item.name }}.json"
+      validate: ".gen/{{ project }}/validate_template .gen/{{ project }}/worker.yaml %s"
     loop: "{{ workers }}"
 
   - name: Remove patch validator script
     file:
-      path: .gen/validate_template
+      path: ".gen/{{ project }}/validate_template"
       state: absent

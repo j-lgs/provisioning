@@ -32,14 +32,17 @@ endpoints: '"10.0.1.31" "10.0.1.32" "10.0.1.33"'
 default_node: "10.0.1.31"
 # Enable the cluster discovery feature
 discovery: true
+registry_host: "10.0.1.8"
 
 # An ip for the ingress-nginx controller that will be provided by metallb.
 ingress_ip: "10.0.1.25"
 ingress_ssl_port: "8443"
 ingress_http_port: "8080"
 
+node_base_name: "eintei"
+
 controlplanes:
-- name: eientei-control-1 # Doesn't need to match what was defined in the terraform configuration.
+- name: "{{ node_base_name }}-control-1" # Doesn't need to match what was defined in the terraform configuration.
   # TODO: Derive the node's IP from it's CIDR address.
   ip: "10.0.1.31"
   cidr: "10.0.1.31/17"
@@ -52,7 +55,7 @@ controlplanes:
   peers:
   - "10.0.1.33" # The node's peers within the Keepalived cluster.
   - "10.0.1.32"
-- name: eientei-control-2
+- name: "{{ node_base_name }}-control-2"
   api_proxy: true
   ip: "10.0.1.32"
   cidr: "10.0.1.32/17"
@@ -63,7 +66,7 @@ controlplanes:
   peers:
   - "10.0.1.33"
   - "10.0.1.31"
-- name: eientei-control-3
+- name: "{{ node_base_name }}-control-3"
   api_proxy: true
   ip: "10.0.1.33"
   cidr: "10.0.1.33/17"
@@ -76,7 +79,7 @@ controlplanes:
   - "10.0.1.32"
 
 workers:
-- name: eientei-worker-1
+- name: "{{ node_base_name }}-worker-1"
   # Does the worker node use an IGPU?
   igpu: true
   # Should privileged containers be enabled on this worker?
