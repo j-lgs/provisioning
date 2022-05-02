@@ -76,8 +76,7 @@ resource "proxmox_lxc" "registry_cache" {
     # Create the registry
     echo "[registry]
     ${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.registry_server.result}
-    [patch_generator]
-    localhost registry_ip=${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]}" > .gen/${var.environment}/inventory
+    " > .gen/${var.environment}/inventory
 
     # Wait for connection and machine initialisation.
     until ssh root@${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
@@ -152,8 +151,7 @@ resource "proxmox_lxc" "nfs_server" {
     mkdir -p .gen/${var.environment}
     echo "[nfs]
     ${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.nfs_server.result}
-    [patch_generator]
-    localhost registry_ip=${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]}" > .gen/${var.environment}/nfs_inventory
+    "> .gen/${var.environment}/nfs_inventory
     until ssh root@${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
     sleep 15
     ansible-playbook --inventory .gen/${var.environment}/nfs_inventory cluster_containers/provision_nfs.yaml
