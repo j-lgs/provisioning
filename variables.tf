@@ -12,6 +12,30 @@ variable "connections" {
   description = "Map of proxmox hosts to ip addresses and passwords for root ssh authentication."
 }
 
+variable "environment" {
+  description = "Choice of test|prod"
+  type = string
+  default = "prod"
+}
+
+variable "cluster_name" {
+  description = "Name of the kubernetes cluster"
+  type = string
+  default = "kubes"
+}
+
+variable "registry_vmid" {
+  description = "Proxmox VMID for registry container"
+  type = number
+  default = 100
+}
+
+variable "nfs_vmid" {
+  description = "NFS VMID for registry container"
+  type = number
+  default = 101
+}
+
 variable "talos_iso" {
   description = "The location of the talos iso in the target Proxmox \"datacenter\"."
   type = string

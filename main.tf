@@ -8,6 +8,10 @@ terraform {
       source = "ivoronin/macaddress"
       version = "0.3.0"
     }
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = ">= 1.14.0"
+    }
   }
 }
 
@@ -35,7 +39,7 @@ resource "proxmox_lxc" "registry_cache" {
   unprivileged = true
   ostype       = "ubuntu"
 
-  vmid = 100
+  vmid = var.registry_vmid
 
   rootfs {
     storage = var.container_boot_storage
@@ -68,14 +72,14 @@ resource "proxmox_lxc" "registry_cache" {
 
   provisioner "local-exec" {
     command = <<EOT
-    mkdir -p .gen
+    mkdir -p .gen/${var.environment}
     echo "[registry]
     ${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.registry_password.result}
     [patch_generator]
-    localhost registry_ip=${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]}" > .gen/inventory
+    localhost registry_ip=${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]}" > .gen/${var.environment}/inventory
     until ssh root@${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
     sleep 15
-    ansible-playbook --inventory .gen/inventory provision-registry.yml
+    ansible-playbook --inventory .gen/${var.environment}/inventory provision-registry.yml
     EOT
   }
 }
@@ -134,14 +138,14 @@ resource "proxmox_lxc" "nfs_server" {
 
   provisioner "local-exec" {
     command = <<EOT
-    mkdir -p .gen
+    mkdir -p .gen/${var.environment}
     echo "[nfs]
     ${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.nfs_server.result}
     [patch_generator]
-    localhost registry_ip=${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]}" > .gen/nfs_inventory
+    localhost registry_ip=${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]}" > .gen/${var.environment}/nfs_inventory
     until ssh root@${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
     sleep 15
-    ansible-playbook --inventory .gen/nfs_inventory provision_nfs.yml
+    ansible-playbook --inventory .gen/${var.environment}/nfs_inventory provision_nfs.yml
     EOT
   }
 }
@@ -150,10 +154,11 @@ resource "proxmox_lxc" "nfs_server" {
 resource "null_resource" "generate_patches" {
   // Changes to templates or playbook require reprovisioning
   triggers = {
+    environment = var.environment
     hashes = <<EOT
 ${filesha256("talos/generate-talos-patches.yaml")}
 ${filesha256("talos/vars/vault.yaml")}
-${filesha256("talos/vars/main.yaml")}
+${filesha256(join("", ["talos/vars/", var.environment ,"/vars.yaml"]))}
 ${filesha256("talos/vars/main.default.yaml")}
 ${filesha256("talos/vars/vault.default.yaml")}
 ${filesha256("talos/templates/check_apiserver.sh.j2")}
@@ -166,7 +171,7 @@ EOT
 
   provisioner "local-exec" {
     command = <<EOT
-    ansible-playbook talos/generate-talos-patches.yaml --extra-vars @talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt
+    ansible-playbook talos/generate-talos-patches.yaml --extra-vars @talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt --extra-vars "node_name_base=${var.cluster_name}" --extra-vars="@talos/vars/${var.environment}/vars.yaml" --extra-vars "project=${var.environment}"
     EOT
     environment = {
       DUMMY = var.is_sensitive
@@ -176,14 +181,18 @@ EOT
   provisioner "local-exec" {
     when = destroy
     command = <<EOT
-    cd talos/.gen
-    # Destroy all temporary files but don't destroy the talosconfig or wireguard keys
-    rm *.sh *.yaml *.conf *.cfg *.json || true
+    cd talos/.gen/${self.triggers.environment}
+    # Destroy all temporary files but don't destroy the talosconfig, base cluster config, or wireguard keys
+    rm *.sh *.conf *.cfg *.json || true
     EOT
   }
 }
 
 resource "null_resource" "bootstrap_cluster" {
+  triggers = {
+    environment = var.environment
+  }
+
   provisioner "local-exec" {
     command = <<EOT
     until talosctl disks -n ${var.target_node_ip} >/dev/null 2>&1; do echo "waiting for host ${var.target_node_ip}"; sleep 15; done
@@ -198,14 +207,35 @@ resource "null_resource" "bootstrap_cluster" {
   provisioner "local-exec" {
     when = destroy
     command = <<EOT
-    cd talos/.gen
+    cd talos/.gen/${self.triggers.environment}
     # IF this resource is being destroyed the cluster probably is too. Delete privatekeys and talosconfigs.
-    rm *.privatekey talosconfig || true
+    rm *.privatekey talosconfig *.yaml || true
     EOT
   }
 
   depends_on = [
     proxmox_vm_qemu.control_nodes,
+  ]
+}
+
+
+provider "kubectl" {
+  load_config_file = true
+}
+
+
+provider "helm" {
+  kubernetes {
+    config_path = "~/.kube/config"
+  }
+}
+
+module "mayastor_storage" {
+  source = "./storage"
+
+  etcd_count = 1
+  depends_on = [
+    null_resource.bootstrap_cluster
   ]
 }
 
@@ -229,12 +259,12 @@ resource "proxmox_vm_qemu" "control_nodes" {
     echo "waiting for host ${each.key} to boot"
     nc -z -w 180 $ip 50000
     # Apply base config and stage
-    talosctl apply --insecure -n "$ip" -f talos/.gen/controlplane.yaml
+    talosctl apply --insecure -n "$ip" -f talos/.gen/${var.environment}/controlplane.yaml
     echo "Base config applied"
     # Wait for host to be up
     until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
     # Apply patches
-    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${each.key}.json
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${var.environment}/${each.key}.json
     EOT
   }
 
@@ -295,13 +325,13 @@ resource "proxmox_vm_qemu" "igpu_worker_nodes" {
     nc -z -w 180s $ip 50000
     sleep 5
     # Apply base config and stage
-    talosctl apply --insecure -n $ip -f talos/.gen/worker.yaml
+    talosctl apply --insecure -n $ip -f talos/.gen/${var.environment}/worker.yaml
     echo "Base config applied"
     # Wait for host to be up
     echo "waiting for host ${each.key}"
     until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
     # Apply patches
-    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${each.key}.json
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${var.environment}/${each.key}.json
     EOT
   }
 

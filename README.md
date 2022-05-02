@@ -18,3 +18,15 @@ Terraform is used to provision the actual servers on a Proxmox host. Example var
 
 
 Requires installation of ansible, docker, talosctl for the creation of the testing cluster.
+
+```
+terraform plan  -target=module.cluster -var-file="testing.tfvars"
+terraform apply -target=module.cluster -var-file="testing.tfvars"
+# Wait for cluster to be up and running
+terraform plan  -var-file="testing.tfvars"
+terraform apply -var-file="testing.tfvars"
+```
+
+```
+terraform destroy -var-file="testing.tfvars"
+```
