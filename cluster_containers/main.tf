@@ -20,7 +20,7 @@ resource "random_shuffle" "registry_node" {
   result_count = 1
 }
 
-resource "random_password" "registry_password" {
+resource "random_password" "registry_server" {
   length           = 16
   special          = true
   override_special = "!#$%&*()-_=+[]{}<>:?"
@@ -30,7 +30,7 @@ resource "proxmox_lxc" "registry_cache" {
   target_node  = random_shuffle.registry_node.result[0]
   hostname     = var.registry_hostname
   ostemplate   = "${var.proxmox_nodes[random_shuffle.registry_node.result[0]].templates}:vztmpl/${var.registry_template}"
-  password     = random_password.registry_password.result
+  password     = random_password.registry_server.result
   unprivileged = true
   ostype       = "ubuntu"
   
@@ -75,7 +75,7 @@ resource "proxmox_lxc" "registry_cache" {
 
     # Create the registry
     echo "[registry]
-    ${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.registry_password.result}
+    ${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.registry_server.result}
     [patch_generator]
     localhost registry_ip=${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]}" > .gen/${var.environment}/inventory
 
@@ -85,6 +85,78 @@ resource "proxmox_lxc" "registry_cache" {
 
     # Run the playbook
     ansible-playbook --inventory .gen/${var.environment}/inventory cluster_containers/provision_registry.yaml
+    EOT
+  }
+}
+
+resource "random_password" "nfs_server" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+resource "proxmox_lxc" "nfs_server" {
+  target_node  = var.nfs_node
+  hostname     = var.nfs_hostname
+  ostemplate   = "${var.proxmox_nodes[var.nfs_node].templates}:vztmpl/${var.nfs_template}"
+  password     = random_password.nfs_server.result
+  unprivileged = false
+  ostype       = "ubuntu"
+
+  vmid = var.nfs_vmid
+
+  rootfs {
+    storage = var.proxmox_nodes[var.nfs_node].containers
+    size    = var.nfs_size
+  }
+
+  network {
+    name   = "eth0"
+    bridge = "vmbr0"
+    gw     = var.gateway
+    ip     = var.nfs_cidr
+    ip6    = "auto"
+  }
+
+  features {
+    fuse    = false
+    keyctl  = false
+    mknod   = false
+    mount   = "nfs"
+    nesting = true
+  }
+
+  dynamic "mountpoint" {
+    for_each = var.nfs_mounts
+    content {
+      key = tostring(mountpoint.key)
+      slot = mountpoint.key
+      storage = mountpoint.value["path"]
+      volume  = mountpoint.value["path"]
+      mp      = mountpoint.value["path"]
+      size    = mountpoint.value["size"]
+    }
+  }
+
+  cores = var.nfs_cores
+
+  start  = true
+  onboot = true
+
+  ssh_public_keys = <<-EOT
+    ${file("~/.ssh/id_rsa.pub")}
+  EOT
+
+  provisioner "local-exec" {
+    command = <<EOT
+    mkdir -p .gen/${var.environment}
+    echo "[nfs]
+    ${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.nfs_server.result}
+    [patch_generator]
+    localhost registry_ip=${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]}" > .gen/${var.environment}/nfs_inventory
+    until ssh root@${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
+    sleep 15
+    ansible-playbook --inventory .gen/${var.environment}/nfs_inventory cluster_containers/provision_nfs.yaml
     EOT
   }
 }
