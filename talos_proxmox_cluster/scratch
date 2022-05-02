@@ -1,0 +1,289 @@
+
+
+
+resource "null_resource" "bootstrap_cluster" {
+  triggers = {
+    environment = var.environment
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+    until talosctl disks -n ${var.target_node_ip} >/dev/null 2>&1; do echo "waiting for host ${var.target_node_ip}"; sleep 15; done
+    # Probably wait a bit or rerun the command
+    talosctl bootstrap -n ${var.target_node_ip}
+    sleep 15
+    talosctl bootstrap -n ${var.target_node_ip}
+    talosctl kubeconfig -m -f
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when = destroy
+    command = <<EOT
+    cd talos/.gen/${self.triggers.environment}
+    # IF this resource is being destroyed the cluster probably is too. Delete privatekeys and talosconfigs.
+    rm *.privatekey talosconfig *.yaml || true
+    EOT
+  }
+
+  depends_on = [
+    proxmox_vm_qemu.control_nodes,
+  ]
+}
+
+
+
+
+
+
+resource "proxmox_vm_qemu" "control_nodes" {
+  provisioner "local-exec" {
+    command = <<EOT
+    echo "Getting IP"
+    # Get IP for mac address
+    until [ $(nmap -sP 10.0.0.0/24 >/dev/null && arp -an | grep "${macaddress.control_nodes[each.key].address}" \
+      | awk -F'[()]' '{print $2}') != "" ]; do
+      echo "waiting for host ${each.key} to be connected to the network"; sleep 5;
+    done
+    ip=$(arp -an | grep "${macaddress.control_nodes[each.key].address}" | awk -F'[()]' '{print $2}')
+    echo "Got IP $ip for host ${each.key}"
+    # Wait for host to be up
+    echo "waiting for host ${each.key} to boot"
+    nc -z -w 180 $ip 50000
+    # Apply base config and stage
+    talosctl apply --insecure -n "$ip" -f talos/.gen/${var.environment}/controlplane.yaml
+    echo "Base config applied"
+    # Wait for host to be up
+    until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
+    # Apply patches
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${var.environment}/${each.key}.json
+    EOT
+  }
+
+  for_each = var.control_nodes
+  name = each.key
+  desc = "Control plane node for the kubernetes cluster. Running on Talos. Node ${each.value.idx+1}"
+
+  vmid = var.control_vmid_base+each.value.idx
+
+  target_node = each.value.node
+  iso         = join("", [each.value.isoloc, ":iso/", var.talos_iso])
+
+  bios = "ovmf"
+
+  tablet = false
+  agent  = 0
+
+  memory = each.value.memory
+  cores  = each.value.cores
+
+  tags = "kubernetes"
+
+  disk {
+    type = "virtio"
+    storage  = each.value.bootloc
+    size     = each.value.bootsize
+    backup   = 1
+    iothread = 1
+  }
+
+  network {
+    bridge  = "vmbr0"
+    model   = "virtio"
+    macaddr = macaddress.control_nodes[each.key].address
+  }
+
+  depends_on = [
+    proxmox_lxc.registry_cache,
+    null_resource.generate_patches
+  ]
+}
+
+
+
+resource "proxmox_vm_qemu" "igpu_worker_nodes" {
+  provisioner "local-exec" {
+    command = <<EOT
+    until [ $(nmap -sP 10.0.0.0/24 >/dev/null && arp -an | grep "${macaddress.worker_nodes[each.key].address}" \
+      | awk -F'[()]' '{print $2}') != "" ]; do
+      echo "waiting for host ${each.key} to be connected to the network"; sleep 5;
+    done
+    ip=$(arp -an | grep "${macaddress.worker_nodes[each.key].address}" | awk -F'[()]' '{print $2}')
+    # Wait for host to be up
+    echo "waiting for host ${each.key} to boot"
+    nc -z -w 180s $ip 50000
+    sleep 5
+    # Apply base config and stage
+    talosctl apply --insecure -n $ip -f talos/.gen/${var.environment}/worker.yaml
+    echo "Base config applied"
+    # Wait for host to be up
+    echo "waiting for host ${each.key}"
+    until talosctl disks -n "$ip" -e "$ip" >/dev/null 2>&1; do echo "waiting for host ${each.key}"; sleep 15; done
+    # Apply patches
+    talosctl patch machineconfig -n "$ip" -e "$ip" --patch-file talos/.gen/${var.environment}/${each.key}.json
+    EOT
+  }
+
+  connection {
+    type = "ssh"
+    user = "root"
+    password = var.connections[self.target_node].password
+    host = var.connections[self.target_node].ip
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo waiting for host ${each.key} for at most 180s",
+      "sleep 15",
+      "nc -z -w 180s ${each.value.ip} 50000",
+      "sleep 15",
+      "qm set ${self.vmid} -hostpci0 ${var.pcie_id[each.key].id},mdev=${var.pcie_id[each.key].mdev},pcie=1",
+      "qm set ${self.vmid} -machine q35",
+      "qm reboot ${self.vmid}"
+    ]
+  }
+
+  for_each = var.worker_nodes
+  name = each.key
+  desc = "Worker node for the kubernetes cluster. Running on Talos. Node ${each.value.idx+1}"
+
+  vmid = var.worker_vmid_base+each.value.idx
+
+  target_node = each.value.node
+  iso         = join("", [each.value.isoloc, ":iso/", var.talos_iso])
+
+  tablet = false
+  agent  = 0
+  bios   = "ovmf"
+
+  memory = each.value.memory
+  cores  = each.value.cores
+
+  tags = "kubernetes"
+
+  disk {
+    type     = "virtio"
+    storage  = var.boot_storage
+    size     = each.value.bootsize
+    backup   = 1
+    iothread = 1
+  }
+
+  disk {
+    type     = "virtio"
+    storage  = var.data_storage
+    size     = each.value.datasize
+    backup   = 1
+    iothread = 1
+  }
+
+  network {
+    bridge  = "vmbr0"
+    model   = "virtio"
+    macaddr = macaddress.worker_nodes[each.key].address
+  }
+
+  depends_on = [
+    proxmox_lxc.registry_cache,
+    null_resource.generate_patches
+  ]
+}
+
+
+-------------------------------------
+
+
+variable "control_vmid_base" {
+  description = "Base proxmox vmid used in the instantiation of controlplane VMs."
+  type = number
+  default = 200
+}
+
+variable "control_nodes" {
+  description = "Map of controlplane nodes."
+  type = map
+  default = {
+    "cluster-control-1"={idx=0, mac="replace me", cores=2, memory=2048, bootsize="64G"}
+  }
+}
+
+variable "worker_vmid_base" {
+  description = "Base proxmox vmid used in the instantiation of worker VMs."
+  type = number
+  default = 300
+}
+
+variable "worker_nodes" {
+  description = "Map of worker nodes."
+  type = map
+  default = {
+    "cluster-worker-1"={idx=0, mac="replace me", cores=2, memory=2048, bootsize="64G", datasize="64G"}
+  }
+}
+variable "pcie_id" {
+  description = "Map of worker vm names to pcie IDs and MDEVs for gpu passthrough worker VMs."
+}
+
+variable "connections" {
+  description = "Map of proxmox hosts to ip addresses and passwords for root ssh authentication."
+}
+
+variable "environment" {
+  description = "Choice of test|prod"
+  type = string
+  default = "prod"
+}
+
+variable "cluster_name" {
+  description = "Name of the kubernetes cluster"
+  type = string
+  default = "kubes"
+}
+
+variable "registry_vmid" {
+  description = "Proxmox VMID for registry container"
+  type = number
+  default = 100
+}
+
+variable "nfs_vmid" {
+  description = "NFS VMID for registry container"
+  type = number
+  default = 101
+}
+
+variable "talos_iso" {
+  description = "The location of the talos iso in the target Proxmox \"datacenter\"."
+  type = string
+  default = "local-zfs:iso/talos-1.0-amd64.iso"
+}
+
+variable "boot_storage" {
+  description = "Proxmox storage location for VM boot disks."
+  type = string
+  default = "local-zfs"
+}
+
+variable "mac_prefix" {
+  description = "MAC address prefix for VMs"
+}
+
+variable "data_storage" {
+  description = "Proxmox storage location for worker VM data disks."
+  type = string
+  default = "local-zfs"
+}
+
+
+
+variable "ct_target_node" {
+  description = "Proxmox node that the Ubtuntu LXC container will be deployed to."
+  type = string
+  default = "pve"
+}
+
+variable "target_node_ip" {
+  description = "Should match the ip that one of the control_nodes will have once running. Used for bootstrapping the cluster."
+  type = string
+  default = ""
+}
