@@ -62,10 +62,20 @@ module "talos_proxmox_cluster" {
 
   registry_ip = module.cluster_containers.registry_ip
 
-  gateway = var.gateway
   environment = var.environment
 
-  cluster_name = "eientei"
+  cluster_name = var.cluster_name
+  endpoints = var.endpoints
+
+  gateway     = var.gateway
+  nameserver  = var.nameserver
+  apiproxy_ip = var.apiproxy_ip
+  wireguard_cidr = var.wireguard_cidr
+  talos_cluster_name = var.talos_cluster_name
+  ingress_ip = var.ingress_ip
+
+  peers   = var.peers
+  hastate = var.hastate
 }
 
 module "mayastor_storage" {

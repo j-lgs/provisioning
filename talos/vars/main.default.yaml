@@ -27,3 +27,20 @@ image: "ghcr.io/siderolabs/installer:v1.0.2"
 haproxy_image: "haproxy:2.4.14"
 keepalived_image: "osixia/keepalived:1.3.5-1"
 
+# Kubernetes apiserver port that's exposed on the shared IP.
+apiproxy_port: "6443"
+# Kubernetes apiserver port that's exposed on each node.
+local_apiproxy_port: "443"
+
+# Virtual router ID that's shared between Keepalived nodes.
+vrid: 11
+
+# Talos cluster name
+cluster_name: gensokyo-cluster.local
+
+ingress_ssl_port: "8443"
+ingress_http_port: "8080"
+
+node_base_name: ""
+project: ""
+registry_host: ""

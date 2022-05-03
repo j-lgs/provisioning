@@ -14,9 +14,7 @@ locals {
   ]
 
   etcd_persist_size = "2Gi"
-  etcd_count = var.etcd_count
   localpv_class_name = "local-storage"
-  etcd_version = var.etcd_version
 }
 
 terraform {
@@ -28,7 +26,7 @@ terraform {
   }
 }
 
-# Mayastor namespace
+// Mayastor namespace
 resource "kubectl_manifest" "mayastor_namespace" {
   yaml_body = <<TOC
 apiVersion: v1
@@ -67,7 +65,7 @@ spec:
         args:
         - -c
         - >-
-          for i in {0..${local.etcd_count}}; do \
+          for i in $(seq 0 ${var.etcd_count}); do \
             mkdir -p /var/local/mayastor/etcd/pod-"$i"; \
           done
         volumeMounts:
@@ -100,7 +98,7 @@ TOC
 
 resource "kubectl_manifest" "mayastor_etcd_localpv" {
   force_new = true
-  count = local.etcd_count
+  count = var.etcd_count
   yaml_body = <<TOC
 apiVersion: v1
 kind: PersistentVolume
@@ -124,6 +122,16 @@ spec:
   # This way it doesn't matter which node the pod is scheduled on. In the future
   # It would be ideal to restrict this dir creation and PV placement to nodes with
   # a "mayastor-etcd" role.
+
+  # TODO: Automatically generate nodeAffinity from worker node list
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - eientei-worker-1 
 TOC
 }
 
@@ -133,7 +141,7 @@ resource "helm_release" "etcd" {
 
   repository = "https://charts.bitnami.com/bitnami"
   chart      = "etcd"
-  version    = "${local.etcd_version}"
+  version    = "${var.etcd_version}"
 
   set {
     name  = "persistence.size"
@@ -166,7 +174,7 @@ resource "helm_release" "etcd" {
   ]
 }
 
-# Mayastor yamls pulled from Github
+// Mayastor yamls pulled from Github
 data "http" "mayastor_yamls" {
   for_each = toset(local.mayastor_yamls)
   url = each.value
@@ -181,21 +189,18 @@ data "kubectl_file_documents" "mayastor_yamls" {
   content  = tostring(each.value.body)
 }
 
-resource "null_resource" "mayastor_yamls" {
-  depends_on = [
-    data.kubectl_file_documents.mayastor_yamls
-  ]
+locals {
+  // For each kubectl_file_documents instance we have, get the manifests and make a new array.
+  // Expand that array and pass it to the merge function to get a map of kubernetes resource names
+  // to resource yaml descriptions
+  yamllist = merge([for m in data.kubectl_file_documents.mayastor_yamls: m.manifests]...)
 }
 
+// this needs to be commented out on first run of terraform apply, as previous manifests are not known at runtime.
+// before release i need to figure out how to target those dynamic resources first.
 resource "kubectl_manifest" "mayastor_yamls" {
-  count = length(local.mayastor_yamls)
-  # A terribly hacky piece of work. The intention is to first get all manifests,
-  # and flatten them into an object with 11 elements, each containing a manifest.
-  # then the values themselves are transformed further into a list of yaml manifests.
-  #
-  # TODO: Refactor and redo the logic for this affront to god.
-  yaml_body = element([merge([for m in data.kubectl_file_documents.mayastor_yamls: m.manifests]...).*.value], count.index)
-
+  for_each = merge([for m in data.kubectl_file_documents.mayastor_yamls: m.manifests]...)
+  yaml_body = "${each.value}"
   depends_on = [
     helm_release.etcd
   ]

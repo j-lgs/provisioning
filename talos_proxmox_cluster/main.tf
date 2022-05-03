@@ -11,6 +11,68 @@ terraform {
   }
 }
 
+resource "local_file" "generate_patches_vars" {
+  content = <<TOC
+---
+# Local network gateway.
+gateway: "${var.gateway}"
+# Local network nameserver.
+nameserver: "${var.nameserver}"
+
+# Virtual shared IP exposed by Keepalived.
+apiproxy_ip: "${var.apiproxy_ip}"
+
+gen_prefix: "test"
+
+# Version of kubernetes to install in the cluster. Currently on 1.23.6 due to the --port flag being removed
+kubernetes_version: "1.23.6"
+
+# Wireguard allowedips for controlplane nodes. Must be inside the same range as the node wireguard IPs.
+wg_allowedips: "${var.wireguard_cidr}"
+
+# Matches the bootdisks described by the terraform configuration
+disk: "/dev/vda"
+# Make sure to set up your DNS so the chosen endpoint address resolves to the same value as apiproxy_ip.
+endpoint: "https://${local.bootstrap_ip}:6443"
+# Used by the talos client to the talos API.
+endpoints: '"${var.endpoints}"'
+# Default node for talos API operations to act upon.
+default_node: "${local.bootstrap_ip}"
+# Enable the cluster discovery feature
+discovery: true
+
+# An ip for the ingress-nginx controller that will be provided by metallb.
+ingress_ip: "${var.ingress_ip}"
+
+controlplanes:
+%{ for node_key, node in var.control_nodes ~}
+- name: "${node_key}" # Doesn't need to match what was defined in the terraform configuration.
+  # TODO: Derive the node's IP from it's CIDR address.
+  ip: "${node.ip}"
+  cidr: "${node.ip}/17"
+  wg: %{ if node.wg_ip != "" }true%{ else }false%{ endif } # Enable the node's Wireguard tunnel.
+  wg_ip: "${node.wg_ip}" # Wireguard IP. Must match what the VPS's loadbalancer has.
+  api_proxy: %{ if var.apiproxy_ip != "" }true%{ else }false%{ endif } # Haproxy and Keepalived static containers for a HA controlplane.
+  state: ${var.hastate[node_key].state} # The node's role within the Keepalived cluster
+  priority: ${var.hastate[node_key].priority} # The node's priority within the Keepalived cluster.
+  # TODO: Dynamically generate peers.
+  peers:
+  %{ for peer in var.peers[node_key] ~}
+  - "${peer}"
+  %{ endfor ~}
+
+%{ endfor ~}
+workers:
+%{ for node_key, node in var.worker_nodes ~}
+- name: "${node_key}" # Doesn't need to match what was defined in the terraform configuration.
+  cidr: "${node.ip}/17"
+  igpu: %{ if node.pcid != "" }true%{ else }false%{ endif }
+  privileged: true
+  storage: %{ if node.datasize != "" }true%{ else }false%{ endif }
+%{ endfor ~}
+TOC
+  filename = "talos/vars/${var.environment}/vars.gen.yaml"
+}
 
 # Generate json patches that will be applied to the nodes after application
 resource "null_resource" "generate_patches" {
@@ -20,7 +82,6 @@ resource "null_resource" "generate_patches" {
     hashes = <<EOT
 ${filesha256("talos/generate-talos-patches.yaml")}
 ${filesha256("talos/vars/vault.yaml")}
-${filesha256(join("", ["talos/vars/", var.environment ,"/vars.yaml"]))}
 ${filesha256("talos/vars/main.default.yaml")}
 ${filesha256("talos/vars/vault.default.yaml")}
 ${filesha256("talos/templates/check_apiserver.sh.j2")}
@@ -34,7 +95,7 @@ EOT
   # Generate the patches. Treat output as sensitive because it includes wireguard private keys
   provisioner "local-exec" {
     command = <<EOT
-    ansible-playbook talos/generate-talos-patches.yaml --extra-vars @talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt --extra-vars="@talos/vars/${var.environment}/vars.yaml" --extra-vars "node_name_base=${var.cluster_name} project=${var.environment} registry_host=${var.registry_ip}"
+    ansible-playbook talos/generate-talos-patches.yaml --extra-vars @talos/vars/vault.yaml --vault-password-file ~/vault_pass.txt --extra-vars="@${local_file.generate_patches_vars.filename}" --extra-vars "node_name_base=${var.cluster_name} project=${var.environment} registry_host=${var.registry_ip}"
     EOT
     environment = {
       DUMMY = var.is_sensitive
@@ -62,6 +123,12 @@ resource "macaddress" "worker_nodes" {
   prefix = var.mac_prefix
 }
 
+// Ideally the provisioning step would be in a provider like this.
+// resource "talos_control" "control_nodes" {
+//   for_each = proxmox_vm_qemu.control_nodes
+//   name = each.key
+//   macaddr = each.network.macaddr
+// }
 resource "proxmox_vm_qemu" "control_nodes" {
   provisioner "local-exec" {
     command = <<EOT

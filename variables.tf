@@ -29,3 +29,13 @@ variable "registry_cidr" {}
 variable "registry_size" {}
 variable "registry_vmid" {}
 variable "registry_hostname" {}
+
+variable "hastate" {}
+variable "peers" {}
+variable "nameserver" {}
+variable "apiproxy_ip" {}
+variable "wireguard_cidr" {}
+variable "talos_cluster_name" {}
+variable "ingress_ip" {}
+variable "cluster_name" {}
+variable "endpoints" {}

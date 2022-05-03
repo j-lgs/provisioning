@@ -35,7 +35,7 @@ variable "worker_nodes" {
 
 variable "control_nodes" {
   description = "Map of controlplane nodes."
-  type = map(object({i=number, node=string, cores=number, memory=number, bootsize=string, ip=string}))
+  type = map(object({i=number, node=string, cores=number, memory=number, bootsize=string, ip=string, wg_ip=string}))
 }
 
 variable "cluster_name" {
@@ -66,3 +66,13 @@ variable "is_sensitive" {
   sensitive = true
   default = ""
 }
+
+
+variable "hastate" {}
+variable "peers" {}
+variable "nameserver" {}
+variable "apiproxy_ip" {}
+variable "wireguard_cidr" {}
+variable "talos_cluster_name" {}
+variable "ingress_ip" {}
+variable "endpoints" {}
