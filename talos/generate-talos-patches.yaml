@@ -66,11 +66,11 @@
       path: ".gen/{{ project }}/{{ item.name }}.privatekey"
     loop: "{{ controlplanes }}"
     register: privkey_stats
-
+    
   # Controlplane private keys are saved to our ephemeral .gen/{{ project }} directory.
   - name: Generate controlplane privatekeys
     shell: umask 077 && wg genkey > ".gen/{{ project }}/{{ item.1.name }}.privatekey"
-    when: not item.0.stat.exists and item.1.wg
+    when: (not item.0.stat.exists) and item.1.wg
     with_together:
     - "{{ privkey_stats.results }}"
     - "{{ controlplanes }}"
@@ -78,6 +78,7 @@
   # Since public keys are derived from private keys, we can always run this command.
   - name: Generate controlplane publickeys
     shell: wg pubkey < ".gen/{{ project }}/{{ item.name }}.privatekey"
+    when: item.wg
     register: pubkeys
     loop: "{{ controlplanes }}"
 
@@ -88,7 +89,7 @@
       validate: ".gen/{{ project }}/validate_template .gen/{{ project }}/controlplane.yaml %s"
     with_together:
     - "{{ controlplanes }}"
-    - "{{ pubkeys.results }}"
+    - "{{ 'NONE' if pubkeys.results.skipped is not none else pubkeys.results }}"
 
   - name: Template talos workers
     template:

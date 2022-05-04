@@ -1,0 +1,97 @@
+---
+# Local network gateway.
+gateway: "{{ .Gateway }}"
+# Local network nameserver.
+nameserver: "{{ .Nameserver }}"
+
+gen_prefix: "test"
+
+# Version of kubernetes to install in the cluster. Currently on 1.23.6 due to the --port flag being removed
+kubernetes_version: "1.23.6"
+
+# Wireguard allowedips for controlplane nodes. Must be inside the same range as the node wireguard IPs.
+wg_allowedips: "{{ .WgCIDR }}"
+
+# Matches the bootdisks described by the terraform configuration
+disk: "/dev/vda"
+# Make sure to set up your DNS so the chosen endpoint address resolves to the same value as apiproxy_ip.
+endpoint: "https://{{ .BootstrapIP }}:6443"
+# Used by the talos client to the talos API.
+endpoints: '"{{ .Endpoints }}"'
+# Default node for talos API operations to act upon.
+default_node: "{{ .BootstrapIP }}"
+# Enable the cluster discovery feature
+discovery: true
+
+# An ip for the ingress-nginx controller that will be provided by metallb.
+
+{{ if ne .APIProxyIP "" }}
+apiproxy_ip: "{{ .APIProxyIP }}"
+ingress_ip: "{{ .IngressIP }}"
+{{ else }}
+apiproxy_ip: "{{ .APIProxyIP }}"
+apiproxy_ip: false # Enable the node's Wireguard tunnel.
+ingress_ip: ""
+{{ end }}
+
+{{ $apiproxy_ip := .APIProxyIP }}
+{{ $length := len .Controls }} {{ if gt $length 0 }}
+controlplanes:
+{{ end }}
+{{ range .Controls }}
+- name: "{{ .Name }}" # Doesn't need to match what was defined in the terraform configuration.
+  # TODO: Derive the node's IP from it's CIDR address.
+  ip: "{{ .IP }}"
+  cidr: "{{ .IP }}/17"
+
+  # Enable the node's Wireguard tunnel.
+  # Wireguard IP. Must match what the VPS's loadbalancer has.
+  {{ if ne .WgIP "" }}
+  wg: true
+  wg_ip: "{{ .WgIP }}"
+  {{ else }}
+  wg: false
+  wg_ip: ""
+  {{ end }}
+
+  # Enable haproxy and virtual ip
+  {{ if ne $apiproxy_ip "" }}
+  api_proxy: true
+  {{ else }}
+  api_proxy: false
+  {{ end }}
+
+  state: {{ .HAState }} # The node's role within the Keepalived cluster
+  priority: {{ .Priority }} # The node's priority within the Keepalived cluster.
+
+  {{ $length := len .Peers }} {{ if gt $length 0 }}
+  peers:
+  {{ range .Peers }}
+  - "{{ . }}"
+  {{ end }}
+  {{ else }}
+  peers: []
+  {{ end }}
+{{ end }}
+
+{{ $length := len .Workers }} {{ if gt $length 0 }}
+workers:
+{{ end }}
+{{ range .Workers }}
+- name: "{{ .Name }}" # Doesn't need to match what was defined in the terraform configuration.
+  cidr: "{{ .IP }}/17"
+  
+  {{ if .HasGPU }}
+  igpu: true
+  {{ else }}
+  igpu: false
+  {{ end }}
+
+  {{ if .IsStor }}
+  storage: true
+  {{ else }}
+  storage: false
+  {{ end }}
+
+  privileged: true
+{{ end }}

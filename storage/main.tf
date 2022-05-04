@@ -198,10 +198,10 @@ locals {
 
 // this needs to be commented out on first run of terraform apply, as previous manifests are not known at runtime.
 // before release i need to figure out how to target those dynamic resources first.
-resource "kubectl_manifest" "mayastor_yamls" {
-  for_each = merge([for m in data.kubectl_file_documents.mayastor_yamls: m.manifests]...)
-  yaml_body = "${each.value}"
-  depends_on = [
-    helm_release.etcd
-  ]
-}
+//resource "kubectl_manifest" "mayastor_yamls" {
+//  for_each = merge([for m in data.kubectl_file_documents.mayastor_yamls: m.manifests]...)
+//  yaml_body = "${each.value}"
+//  depends_on = [
+//    helm_release.etcd
+//  ]
+//}

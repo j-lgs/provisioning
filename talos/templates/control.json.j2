@@ -38,6 +38,7 @@
      }
     ]
    },
+{% if item.0.wg %}
    {
     "addresses": [
      "{{ item.0.wg_ip }}/24"
@@ -57,6 +58,7 @@
      "privateKey": "{{ lookup('file', '.gen/{{ project }}/'+item.0.name+'.privatekey') }}"
     }
    }
+{% endif %}
   ]
  },
  {
