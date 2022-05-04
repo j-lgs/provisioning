@@ -2,6 +2,7 @@ package talos
 
 func templateHaproxy() string {
 	return `
+{{define "haproxy"}}
 global
   log         /dev/log local0
   log         /dev/log local1 notice
@@ -26,14 +27,14 @@ frontend http_stats
   stats uri /haproxy?stats
 
 listen k8s-apiserver
-  bind *:{{ .ApiProxyPort }}
+  bind *:{{ .APIProxyPort }}
   option httpchk GET /healthz
   http-check expect status 200
   option ssl-hello-chk
   balance leastconn
-  server {{ .Name }}-{{ .IP }} {{ .IP }}:{{ .LocalApiProxyPort }} check inter 5s  fall 2
+  server {{ .Name }}-{{ .IP }} {{ .IP }}:{{ .LocalAPIProxyPort }} check inter 5s  fall 2
 {{ range .Peers }}
-  server {{ .Name }}-{{ . }} {{ . }}:{{ .LocalApiProxyPort }} check inter 5s  fall 2
+  server {{ .Name }}-{{ . }} {{ . }}:{{ .LocalAPIProxyPort }} check inter 5s  fall 2
 {{ end }}
 
 {{ if ne .WgIP "" }}
@@ -52,13 +53,15 @@ listen wireguard-https-to-ingress
   balance leastconn
   server wireguard-1-https {{ .IngressIP }}:443 check check-ssl inter 60s  fall 3  rise 1 verify none
 {{ end }}
+{{ end }}
 `
 }
 
 func templateKeepalived() string {
 	return `
+{{ define "keepalived" }}
 global_defs {
-  router_id {{ .RouterID }}
+  router_id {{ .VRID }}
 }
 
 vrrp_instance VI_1 {
@@ -83,14 +86,16 @@ vrrp_instance VI_1 {
   }
 
   virtual_ipaddress {
-    {{ .ApiProxyIP }}/24
+    {{ .APIProxyIP }}/24
   }
 }
+{{ end }}
 `
 }
 
-func templateApiCheck() string {
+func templateAPICheck() string {
 	return `
+{{ define "checkAPIServer" }}
 #!/bin/sh
 
 errorExit() {
@@ -99,15 +104,15 @@ errorExit() {
 }
 
 curl --silent --max-time 2 --insecure https://localhost:{{ .APIProxyPort }}/ -o /dev/null || errorExit "Error GET https://localhost:{{ .APIProxyPort }}/"
-if ip addr | grep -q {{ apiproxy_ip }}; then
+if ip addr | grep -q {{ .APIProxyIP }}; then
   curl --silent --max-time 2 --insecure https://{{ .APIProxyIP }}:{{ .APIProxyPort }}/ -o /dev/null || errorExit "Error GET https://{{ .APIProxyIP }}:{{ .APIProxyPort }}/"
 fi
+{{ end }}
 `
 }
 
 func templateControl() string {
 	return `
-{{ .APIProxyIP }}
 [
  {
   "op": "add",
@@ -153,7 +158,7 @@ func templateControl() string {
     "addresses": [
      "{{ .WgIP }}/24"
     ],
-    "interface": "wg0",
+    "interface": "{{ .WgInterface }}",
     "wireguard": {
      "peers": [
       {
@@ -227,19 +232,19 @@ func templateControl() string {
   "path": "/machine/files",
   "value": [
    {
-    "content": {{ template "haproxy" }},
+    {{ templateContent "haproxy" . }},
     "op": "create",
     "path": "/var/static-confs/haproxy/haproxy.cfg",
     "permissions": 438
    },
    {
-    "content": {{ template "keepalived" }},
+    {{ templateContent "keepalived" . }},
     "op": "create",
     "path": "/var/static-confs/keepalived/keepalived.conf",
     "permissions": 292
    },
    {
-  "content": {{ template "checkApiserver" }},
+    {{ templateContent "checkAPIServer" . }},
     "op": "create",
     "path": "/var/static-confs/check_apiserver.sh",
     "permissions": 365

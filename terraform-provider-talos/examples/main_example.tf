@@ -95,6 +95,12 @@ resource "talos_control_node" "example" {
   pem = talos_configuration.example.pem
   control_yaml = talos_configuration.example.control_yaml
 
+  wg_ip = "10.123.0.10"
+
+  api_proxy_ip = "10.0.1.30"
+
+  registry_ip = "10.0.1.8"
+
   /*
   depends_on = [
     proxmox_vm_qemu.control_node, // For timeout reasons
