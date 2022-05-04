@@ -79,7 +79,6 @@ resource "talos_configuration" "example" {
  // }
 }
 
-/*
 resource "talos_control_node" "example" {
   for_each = {
     eientei-control-1: {ip="10.0.1.31", macaddr="e8:0a:d0:42:42:42"}
@@ -88,12 +87,18 @@ resource "talos_control_node" "example" {
   name = each.key
   macaddr = each.value.macaddr
   ip = each.value.ip
+  gateway = "10.0.0.1"
+  nameservers = [
+    "10.0.0.1"
+  ]
 
-  ca_crt = talos_configuration.example.ca_crt
-  
+  pem = talos_configuration.example.pem
+  control_yaml = talos_configuration.example.control_yaml
+
+  /*
   depends_on = [
     proxmox_vm_qemu.control_node, // For timeout reasons
   ]
+  */
 }
 
-*/

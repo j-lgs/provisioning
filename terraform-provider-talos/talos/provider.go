@@ -23,6 +23,7 @@ func Provider() *schema.Provider {
 		},
 		ResourcesMap: map[string]*schema.Resource{
 			"talos_configuration": resourceClusterConfiguration(),
+			"talos_control_node":  resourceControlNode(),
 		},
 		DataSourcesMap:       map[string]*schema.Resource{},
 		ConfigureContextFunc: providerConfigure,
