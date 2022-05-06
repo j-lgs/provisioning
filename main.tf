@@ -61,6 +61,7 @@ module "talos_proxmox_cluster" {
   worker_nodes = var.worker_nodes
 
   registry_ip = module.cluster_containers.registry_ip
+  //registry_ip = ""
 
   environment = var.environment
 
@@ -77,7 +78,7 @@ module "talos_proxmox_cluster" {
   peers   = var.peers
   hastate = var.hastate
 }
-
+/*
 module "mayastor_storage" {
   source = "./storage"
 
@@ -88,3 +89,4 @@ module "mayastor_storage" {
   ]
 }
 
+*/
