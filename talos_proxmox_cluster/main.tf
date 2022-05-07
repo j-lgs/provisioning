@@ -166,9 +166,9 @@ resource "talos_worker_node" "eientei" {
 
   registry_ip = var.registry_ip
 
-  base_config = talos_configuration.example.base_config
+  base_config = talos_configuration.eientei.base_config
 }
-*/
+
 
 //kubernetes_endpoint = join("", ["https://", local.bootstrap_node.ip, ":6443"])
 
