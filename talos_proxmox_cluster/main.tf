@@ -144,12 +144,12 @@ locals {
   bootstrap_node_key = random_shuffle.controlplanes.result[0]
   bootstrap_node = var.control_nodes[random_shuffle.controlplanes.result[0]]
 }
-/*
+
 resource "talos_worker_node" "eientei" {
   for_each = var.worker_nodes
 
   install_disk = "/dev/vda"
-  talos_image = "ghcr.io/siderolabs/installer:v1.0.2"
+  talos_image = "ghcr.io/siderolabs/installer:v1.0.4"
   
   name = each.key
   macaddr = proxmox_vm_qemu.worker_nodes[each.key].network[0].macaddr
@@ -185,7 +185,7 @@ resource "talos_control_node" "eientei" {
   for_each = var.control_nodes
 
   install_disk = "/dev/vda"
-  talos_image = "ghcr.io/siderolabs/installer:v1.0.2"
+  talos_image = "ghcr.io/siderolabs/installer:v1.0.4"
 
   
   name = each.key
