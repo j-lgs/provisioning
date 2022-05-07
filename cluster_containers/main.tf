@@ -79,11 +79,11 @@ resource "proxmox_lxc" "registry_cache" {
     " > .gen/${var.environment}/inventory
 
     # Wait for connection and machine initialisation.
-    until ssh root@${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
+    until ssh -o StrictHostKeyChecking=no root@${split("/", proxmox_lxc.registry_cache.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
     sleep 15
 
     # Run the playbook
-    ansible-playbook --inventory .gen/${var.environment}/inventory cluster_containers/provision_registry.yaml
+    ANSIBLE_HOST_KEY_CHECKING="false" ansible-playbook --inventory .gen/${var.environment}/inventory cluster_containers/provision_registry.yaml
     EOT
   }
 }
@@ -152,9 +152,9 @@ resource "proxmox_lxc" "nfs_server" {
     echo "[nfs]
     ${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} ansible_user=root ansible_password=${random_password.nfs_server.result}
     "> .gen/${var.environment}/nfs_inventory
-    until ssh root@${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
+    until ssh -o StrictHostKeyChecking=no root@${split("/", proxmox_lxc.nfs_server.network[0].ip)[0]} true >/dev/null 2>&1; do echo "."; sleep 5; done
     sleep 15
-    ansible-playbook --inventory .gen/${var.environment}/nfs_inventory cluster_containers/provision_nfs.yaml
+    ANSIBLE_HOST_KEY_CHECKING="false" ansible-playbook --inventory .gen/${var.environment}/nfs_inventory cluster_containers/provision_nfs.yaml
     EOT
   }
 }
